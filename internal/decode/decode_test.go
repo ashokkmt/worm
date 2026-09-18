@@ -269,6 +269,124 @@ func TestCSVDecoder_Malformed(t *testing.T) {
 	}
 }
 
+func TestCEFDecoder_Valid(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/cef/valid_alert.txt")
+	decoder := NewCEFDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.90 {
+		t.Errorf("expected CEF confidence >= 0.90, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.Format != "cef" {
+		t.Errorf("expected format cef, got %s", rec.Format)
+	}
+	if rec.Headers["device_vendor"] != "Suricata" {
+		t.Errorf("expected vendor Suricata, got %v", rec.Headers["device_vendor"])
+	}
+	if rec.Headers["device_product"] != "IDPS" {
+		t.Errorf("expected product IDPS, got %v", rec.Headers["device_product"])
+	}
+	if rec.Headers["name"] != "ET SCAN Potential SSH Scan" {
+		t.Errorf("expected name ET SCAN Potential SSH Scan, got %v", rec.Headers["name"])
+	}
+	if rec.Headers["severity"] != "6" {
+		t.Errorf("expected severity 6, got %v", rec.Headers["severity"])
+	}
+
+	// Extension fields
+	if rec.Fields["src"] != "45.33.32.156" {
+		t.Errorf("expected src 45.33.32.156, got %v", rec.Fields["src"])
+	}
+	if rec.Fields["dst"] != "10.0.1.5" {
+		t.Errorf("expected dst 10.0.1.5, got %v", rec.Fields["dst"])
+	}
+	if rec.Fields["spt"] != "44100" {
+		t.Errorf("expected spt 44100, got %v", rec.Fields["spt"])
+	}
+	if rec.Fields["dpt"] != "22" {
+		t.Errorf("expected dpt 22, got %v", rec.Fields["dpt"])
+	}
+	if rec.Fields["act"] != "Alert" {
+		t.Errorf("expected act Alert, got %v", rec.Fields["act"])
+	}
+	if rec.Fields["msg"] != "Potential SSH brute force detected" {
+		t.Errorf("expected msg 'Potential SSH brute force detected', got %v", rec.Fields["msg"])
+	}
+}
+
+func TestCEFDecoder_Malformed(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/cef/malformed_header.txt")
+	decoder := NewCEFDecoder()
+
+	_, err := decoder.Decode(fixture)
+	if err == nil {
+		t.Errorf("expected error decoding malformed CEF header, got nil")
+	}
+}
+
+func TestTextDecoder_CombinedLog(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/text/valid_combined_log.txt")
+	decoder := NewTextDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.80 {
+		t.Errorf("expected confidence >= 0.80, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.Format != "text_clf" {
+		t.Errorf("expected format text_clf, got %s", rec.Format)
+	}
+	if rec.Fields["client_ip"] != "10.0.1.50" {
+		t.Errorf("expected client_ip 10.0.1.50, got %v", rec.Fields["client_ip"])
+	}
+	if rec.Fields["auth_user"] != "john" {
+		t.Errorf("expected auth_user john, got %v", rec.Fields["auth_user"])
+	}
+	if rec.Fields["http_method"] != "GET" {
+		t.Errorf("expected http_method GET, got %v", rec.Fields["http_method"])
+	}
+	if rec.Fields["url_path"] != "/dashboard" {
+		t.Errorf("expected url_path /dashboard, got %v", rec.Fields["url_path"])
+	}
+	if rec.Fields["status_code"] != 200 {
+		t.Errorf("expected status_code 200, got %v", rec.Fields["status_code"])
+	}
+	if rec.Fields["response_bytes"] != int64(15234) {
+		t.Errorf("expected response_bytes 15234, got %v", rec.Fields["response_bytes"])
+	}
+}
+
+func TestTextDecoder_Malformed(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/text/malformed_partial.txt")
+	decoder := NewTextDecoder()
+
+	_, err := decoder.Decode(fixture)
+	if err == nil {
+		t.Errorf("expected error decoding empty/malformed text, got nil")
+	}
+}
+
 func TestRegistryAutoDetection(t *testing.T) {
 	registry := DefaultRegistry()
 
@@ -284,6 +402,8 @@ func TestRegistryAutoDetection(t *testing.T) {
 		{"NDJSON", "testdata/formats/json/valid_ndjson.json", "json", 2},
 		{"JSON Array", "testdata/formats/json/valid_array.json", "json", 2},
 		{"CSV", "testdata/formats/csv/valid_headers.csv", "csv", 3},
+		{"CEF", "testdata/formats/cef/valid_alert.txt", "cef", 1},
+		{"Text CLF", "testdata/formats/text/valid_combined_log.txt", "text", 1},
 	}
 
 	for _, tc := range tests {

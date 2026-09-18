@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -315,6 +316,71 @@ func (s *RawStore) GetQuarantined(ctx context.Context, limit, offset int) ([]mod
 		entries = append(entries, e)
 	}
 	return entries, nil
+}
+
+// GetQuarantineByID retrieves a single quarantined entry by its quarantine ID.
+func (s *RawStore) GetQuarantineByID(ctx context.Context, qID string) (*model.QuarantineEntry, error) {
+	query := `
+	SELECT quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
+	FROM quarantine
+	WHERE quarantine_id = ?;
+	`
+	var (
+		e            model.QuarantineEntry
+		candidateStr sql.NullString
+		replayInt    int
+		qAtStr       string
+		rAtStr       sql.NullString
+	)
+	err := s.db.QueryRowContext(ctx, query, qID).Scan(
+		&e.QuarantineID,
+		&e.RawID,
+		&e.RawSHA256,
+		&e.Stage,
+		&e.Reason,
+		&e.ErrorDetails,
+		&e.RawPreview,
+		&candidateStr,
+		&replayInt,
+		&qAtStr,
+		&rAtStr,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("quarantine entry not found: %s", qID)
+		}
+		return nil, fmt.Errorf("failed to query quarantine entry %s: %w", qID, err)
+	}
+
+	if candidateStr.Valid && candidateStr.String != "" {
+		e.CandidatePacks = strings.Split(candidateStr.String, ",")
+	}
+	e.ReplayEligible = (replayInt == 1)
+	t, _ := time.Parse(time.RFC3339Nano, qAtStr)
+	e.QuarantinedAt = t
+	if rAtStr.Valid {
+		rt, _ := time.Parse(time.RFC3339Nano, rAtStr.String)
+		e.ReplayedAt = &rt
+	}
+	return &e, nil
+}
+
+// MarkReplayed updates the replayed_at timestamp of a quarantined record.
+func (s *RawStore) MarkReplayed(ctx context.Context, qID string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	nowStr := time.Now().UTC().Format(time.RFC3339Nano)
+	query := `UPDATE quarantine SET replayed_at = ? WHERE quarantine_id = ?;`
+	res, err := s.db.ExecContext(ctx, query, nowStr, qID)
+	if err != nil {
+		return fmt.Errorf("failed to mark quarantine %s as replayed: %w", qID, err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("quarantine entry not found for replay update: %s", qID)
+	}
+	return nil
 }
 
 // Close closes the underlying SQLite database handle.

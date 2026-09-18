@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,8 @@ import (
 
 	"worm/internal/decode"
 	"worm/internal/model"
+	"worm/internal/normalize"
+	"worm/internal/packs"
 	"worm/internal/rawstore"
 )
 
@@ -51,21 +54,25 @@ func (m *MemorySink) Clear() {
 
 // Config configures the bounded pipeline worker pool.
 type Config struct {
-	Workers    int // number of concurrent processing goroutines
-	BufferSize int // capacity of the ingestion buffer channel
+	Workers     int                    // number of concurrent processing goroutines
+	BufferSize  int                    // capacity of the ingestion buffer channel
+	PackManager *packs.SnapshotManager // optional active parser pack manager
 }
 
 // Pipeline orchestrates raw commit, parsing, normalization, quarantine and loss accounting.
 type Pipeline struct {
-	cfg      Config
-	store    *rawstore.RawStore
-	sink     OutputSink
-	registry *decode.Registry
-	inbound  chan model.IngestedRecord
-	wg       sync.WaitGroup
-	ctx      context.Context
-	cancel   context.CancelFunc
-	closed   atomic.Bool
+	cfg         Config
+	store       *rawstore.RawStore
+	sink        OutputSink
+	registry    *decode.Registry
+	packManager *packs.SnapshotManager
+	normalizer  *normalize.Normalizer
+	validator   *normalize.Validator
+	inbound     chan model.IngestedRecord
+	wg          sync.WaitGroup
+	ctx         context.Context
+	cancel      context.CancelFunc
+	closed      atomic.Bool
 
 	// Loss accounting counters
 	accepted    atomic.Int64
@@ -89,14 +96,22 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Pipeline{
-		cfg:      cfg,
-		store:    store,
-		sink:     sink,
-		registry: decode.DefaultRegistry(),
-		inbound:  make(chan model.IngestedRecord, cfg.BufferSize),
-		ctx:      ctx,
-		cancel:   cancel,
+		cfg:         cfg,
+		store:       store,
+		sink:        sink,
+		registry:    decode.DefaultRegistry(),
+		packManager: cfg.PackManager,
+		normalizer:  normalize.NewNormalizer(),
+		validator:   normalize.NewValidator(),
+		inbound:     make(chan model.IngestedRecord, cfg.BufferSize),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
+}
+
+// SetPackManager attaches or updates the active parser pack manager.
+func (p *Pipeline) SetPackManager(pm *packs.SnapshotManager) {
+	p.packManager = pm
 }
 
 // Start launches the background worker goroutines.
@@ -113,74 +128,56 @@ func (p *Pipeline) Submit(record model.IngestedRecord) error {
 		return fmt.Errorf("pipeline is closed")
 	}
 
+	p.accepted.Add(1)
+	p.pending.Add(1)
+
 	select {
 	case p.inbound <- record:
-		p.accepted.Add(1)
-		p.pending.Add(1)
 		return nil
 	case <-p.ctx.Done():
+		p.pending.Add(-1)
 		return p.ctx.Err()
 	default:
-		// Channel is full — apply backpressure
-		return fmt.Errorf("pipeline ingress buffer full (%d/%d)", len(p.inbound), p.cfg.BufferSize)
+		p.pending.Add(-1)
+		return fmt.Errorf("pipeline buffer full (backpressure limit reached)")
 	}
 }
 
-// SubmitSync synchronously submits and blocks until the record is accepted into the buffer.
+// SubmitSync processes an ingested record synchronously within the calling goroutine.
 func (p *Pipeline) SubmitSync(ctx context.Context, record model.IngestedRecord) error {
 	if p.closed.Load() {
 		return fmt.Errorf("pipeline is closed")
 	}
 
-	select {
-	case p.inbound <- record:
-		p.accepted.Add(1)
-		p.pending.Add(1)
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-p.ctx.Done():
-		return p.ctx.Err()
-	}
+	p.accepted.Add(1)
+	p.pending.Add(1)
+	p.processRecord(ctx, record)
+	return nil
 }
 
-// workerLoop continuously processes incoming ingested records.
+// Stop gracefully drains the ingestion buffer and waits for all workers to finish.
+func (p *Pipeline) Stop() {
+	if !p.closed.CompareAndSwap(false, true) {
+		return
+	}
+	close(p.inbound)
+	p.wg.Wait()
+	p.cancel()
+}
+
 func (p *Pipeline) workerLoop(workerID int) {
 	defer p.wg.Done()
-
-	for {
-		select {
-		case record, ok := <-p.inbound:
-			if !ok {
-				return
-			}
-			p.processRecord(record)
-		case <-p.ctx.Done():
-			// Drain remaining records before exiting
-			for {
-				select {
-				case record, ok := <-p.inbound:
-					if !ok {
-						return
-					}
-					p.processRecord(record)
-				default:
-					return
-				}
-			}
-		}
+	for rec := range p.inbound {
+		p.processRecord(p.ctx, rec)
 	}
 }
 
-// processRecord executes the processing stages on a single ingested record.
-func (p *Pipeline) processRecord(record model.IngestedRecord) {
-	ctx := context.Background()
-	history := make([]model.ProcessingStep, 0, 8)
+func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) {
+	var history []model.ProcessingStep
 
-	// Stage 1: Raw Ingress & Cryptographic Commit
-	rawEvt, err := p.store.Store(ctx, record)
+	// Stage 1: Commit raw bytes to raw store
+	rawEvt, err := p.store.Store(ctx, rec)
 	if err != nil {
-		// Critical storage failure: mark quarantine with synthetic ID
 		p.quarantined.Add(1)
 		p.pending.Add(-1)
 		return
@@ -192,20 +189,19 @@ func (p *Pipeline) processRecord(record model.IngestedRecord) {
 		Result:    "ok",
 	})
 
-	// Stage 2 & 3: Universal Format Detection & Syntax Decoding
+	// Stage 2: Format auto-detection & Syntax decoding
 	decoder, decodedRecords, err := p.registry.DetectAndDecode(rawEvt.Payload)
 	if err != nil {
-		stage := "decode"
 		reason := "parse_error"
+		stage := "decode"
 		if decoder == nil {
 			stage = "format_detect"
-			reason = "unknown_source"
 		}
 
 		history = append(history, model.ProcessingStep{
 			Stage:     stage,
 			Timestamp: time.Now().UTC(),
-			Result:    "error",
+			Result:    "failed",
 			Error:     err.Error(),
 		})
 
@@ -236,7 +232,7 @@ func (p *Pipeline) processRecord(record model.IngestedRecord) {
 		Result:    decoder.Name(),
 	})
 
-	// Adjust loss accounting counters for batch expansion (e.g. JSON array or CSV)
+	// Adjust loss accounting counters for batch expansion
 	numChildren := len(decodedRecords)
 	if numChildren > 1 {
 		p.accepted.Add(int64(numChildren - 1))
@@ -247,7 +243,7 @@ func (p *Pipeline) processRecord(record model.IngestedRecord) {
 	}
 
 	for _, decRec := range decodedRecords {
-		childHistory := make([]model.ProcessingStep, len(history), len(history)+2)
+		childHistory := make([]model.ProcessingStep, len(history), len(history)+4)
 		copy(childHistory, history)
 
 		childHistory = append(childHistory, model.ProcessingStep{
@@ -256,31 +252,116 @@ func (p *Pipeline) processRecord(record model.IngestedRecord) {
 			Result:    decRec.Format,
 		})
 
-		var randBytes [8]byte
-		_, _ = rand.Read(randBytes[:])
-		eventID := fmt.Sprintf("worm-evt-%x", randBytes)
-
-		envelope := model.WormEnvelope{
-			EventID:           eventID,
-			RawID:             rawEvt.RawID,
-			RawSHA256:         rawEvt.RawSHA256,
-			RawBytes:          rawEvt.ByteCount,
-			RecordOrdinal:     decRec.RecordOrdinal,
-			SourceCategory:    "unclassified",
-			SourceID:          rawEvt.SourceIP,
-			ParserPack:        "generic-core",
-			ParserVersion:     "0.1.0",
-			CoreVersion:       "0.1.0",
-			SchemaVersion:     "1.3.0",
-			ReceivedTime:      rawEvt.ReceivedAt,
-			Status:            "normalized",
-			Warnings:          []string{},
-			ProcessingHistory: childHistory,
+		preview := string(decRec.RawPayload)
+		if len(preview) > 256 {
+			preview = preview[:256]
 		}
 
-		normalized := &model.NormalizedEvent{
-			Worm: envelope,
-			OCSF: decRec.Fields,
+		// Stage 3: Parser Pack Matching (if pack manager active)
+		var pack *packs.ParserPack
+		if p.packManager != nil && p.packManager.Active() != nil {
+			matchedPack, matchErr := p.packManager.Active().Match(decRec)
+			if matchErr != nil {
+				reason := "unknown_source"
+				if errors.Is(matchErr, packs.ErrAmbiguousMatch) {
+					reason = "ambiguous_source"
+				}
+
+				childHistory = append(childHistory, model.ProcessingStep{
+					Stage:     "parser_match",
+					Timestamp: time.Now().UTC(),
+					Result:    "failed",
+					Error:     matchErr.Error(),
+				})
+
+				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+					RawID:          rawEvt.RawID,
+					RawSHA256:      rawEvt.RawSHA256,
+					Stage:          "parser_match",
+					Reason:         reason,
+					ErrorDetails:   matchErr.Error(),
+					RawPreview:     preview,
+					ReplayEligible: true,
+					QuarantinedAt:  time.Now().UTC(),
+				})
+
+				p.quarantined.Add(1)
+				p.pending.Add(-1)
+				continue
+			}
+
+			pack = matchedPack
+			childHistory = append(childHistory, model.ProcessingStep{
+				Stage:     "parser_match",
+				Timestamp: time.Now().UTC(),
+				Result:    fmt.Sprintf("%s@%s", pack.Metadata.Name, pack.Metadata.Version),
+			})
+		}
+
+		// Stage 4 & 5: Normalization & Validation
+		var normalized *model.NormalizedEvent
+		if pack != nil {
+			var normErr error
+			normalized, normErr = p.normalizer.Normalize(rawEvt, decRec, pack, childHistory)
+			if normErr != nil {
+				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+					RawID:          rawEvt.RawID,
+					RawSHA256:      rawEvt.RawSHA256,
+					Stage:          "normalize",
+					Reason:         "schema_error",
+					ErrorDetails:   normErr.Error(),
+					RawPreview:     preview,
+					ReplayEligible: true,
+					QuarantinedAt:  time.Now().UTC(),
+				})
+				p.quarantined.Add(1)
+				p.pending.Add(-1)
+				continue
+			}
+
+			if valErr := p.validator.Validate(normalized); valErr != nil {
+				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+					RawID:          rawEvt.RawID,
+					RawSHA256:      rawEvt.RawSHA256,
+					Stage:          "validate",
+					Reason:         "schema_error",
+					ErrorDetails:   valErr.Error(),
+					RawPreview:     preview,
+					ReplayEligible: true,
+					QuarantinedAt:  time.Now().UTC(),
+				})
+				p.quarantined.Add(1)
+				p.pending.Add(-1)
+				continue
+			}
+		} else {
+			// Basic generic fallback when no pack manager is configured
+			var randBytes [8]byte
+			_, _ = rand.Read(randBytes[:])
+			eventID := fmt.Sprintf("worm-evt-%x", randBytes)
+
+			envelope := model.WormEnvelope{
+				EventID:           eventID,
+				RawID:             rawEvt.RawID,
+				RawSHA256:         rawEvt.RawSHA256,
+				RawBytes:          rawEvt.ByteCount,
+				RecordOrdinal:     decRec.RecordOrdinal,
+				SourceCategory:    "unclassified",
+				SourceID:          rawEvt.SourceIP,
+				ParserPack:        "generic-core",
+				ParserVersion:     "0.1.0",
+				CoreVersion:       "0.1.0",
+				SchemaVersion:     "1.3.0",
+				ReceivedTime:      rawEvt.ReceivedAt,
+				Status:            "normalized",
+				Warnings:          []string{},
+				ProcessingHistory: childHistory,
+			}
+
+			normalized = &model.NormalizedEvent{
+				Worm: envelope,
+				OCSF: decRec.Fields,
+			}
 		}
 
 		if err := p.sink.Emit(ctx, normalized); err != nil {
@@ -297,6 +378,67 @@ func (p *Pipeline) processRecord(record model.IngestedRecord) {
 	_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusNormalized)
 }
 
+// Replay retrieves a quarantined event by its quarantine ID, verifies cryptographic
+// integrity, and re-processes it through the pipeline with currently active parser packs.
+func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEvent, error) {
+	entry, err := p.store.GetQuarantineByID(ctx, qID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve quarantine entry %s: %w", qID, err)
+	}
+
+	rawEvt, err := p.store.Retrieve(ctx, entry.RawID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve raw event %s: %w", entry.RawID, err)
+	}
+
+	matches, _, err := p.store.Verify(ctx, entry.RawID)
+	if err != nil || !matches {
+		return nil, fmt.Errorf("cryptographic integrity check failed for raw event %s", entry.RawID)
+	}
+
+	// Run through detection, decoding, matching, and normalization
+	decoder, decodedRecords, err := p.registry.DetectAndDecode(rawEvt.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("replay decode failed: %w", err)
+	}
+	if len(decodedRecords) == 0 {
+		return nil, fmt.Errorf("no decoded records produced upon replay")
+	}
+
+	decRec := decodedRecords[0]
+	if p.packManager == nil || p.packManager.Active() == nil {
+		return nil, fmt.Errorf("no active parser pack snapshot available for replay")
+	}
+
+	pack, err := p.packManager.Active().Match(decRec)
+	if err != nil {
+		return nil, fmt.Errorf("replay pack match failed: %w", err)
+	}
+
+	history := []model.ProcessingStep{
+		{Stage: "raw_commit", Timestamp: rawEvt.ReceivedAt, Result: "ok"},
+		{Stage: "format_detect", Timestamp: time.Now().UTC(), Result: decoder.Name()},
+		{Stage: "decode", Timestamp: time.Now().UTC(), Result: decRec.Format},
+		{Stage: "parser_match", Timestamp: time.Now().UTC(), Result: fmt.Sprintf("%s@%s", pack.Metadata.Name, pack.Metadata.Version)},
+	}
+
+	norm, err := p.normalizer.Normalize(rawEvt, decRec, pack, history)
+	if err != nil {
+		return nil, fmt.Errorf("replay normalization failed: %w", err)
+	}
+
+	if err := p.validator.Validate(norm); err != nil {
+		return nil, fmt.Errorf("replay validation failed: %w", err)
+	}
+
+	// Mark replayed in store
+	_ = p.store.MarkReplayed(ctx, qID)
+	_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusNormalized)
+
+	_ = p.sink.Emit(ctx, norm)
+	return norm, nil
+}
+
 // Stats returns a snapshot of loss accounting counters and verifies the invariant.
 func (p *Pipeline) Stats() model.LossAccountingStats {
 	return model.LossAccountingStats{
@@ -305,14 +447,5 @@ func (p *Pipeline) Stats() model.LossAccountingStats {
 		Quarantined: p.quarantined.Load(),
 		Pending:     p.pending.Load(),
 		Delivered:   p.delivered.Load(),
-	}
-}
-
-// Stop gracefully stops accepting new records, flushes the queue, and terminates workers.
-func (p *Pipeline) Stop() {
-	if p.closed.CompareAndSwap(false, true) {
-		close(p.inbound)
-		p.wg.Wait()
-		p.cancel()
 	}
 }

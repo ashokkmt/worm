@@ -23,6 +23,8 @@ func DefaultRegistry() *Registry {
 	r.Register(NewSyslogDecoder())
 	r.Register(NewJSONDecoder())
 	r.Register(NewCSVDecoder())
+	r.Register(NewCEFDecoder())
+	r.Register(NewTextDecoder())
 	return r
 }
 

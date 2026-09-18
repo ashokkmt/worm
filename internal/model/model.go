@@ -77,8 +77,8 @@ type WormEnvelope struct {
 
 // NormalizedEvent represents the final standardized event emitted to SIEM, data lakes, or ML pipelines.
 type NormalizedEvent struct {
-	Worm WormEnvelope   `json:"worm"` // WORM governance envelope
-	OCSF map[string]any `json:"ocsf"` // canonical OCSF taxonomy fields
+	Worm WormEnvelope   `json:"worm"`  // WORM governance envelope
+	OCSF map[string]any `json:"event"` // canonical OCSF taxonomy fields
 }
 
 // QuarantineEntry represents an unparseable, unmatched, or schema-violating event parked in the dead-letter store.
