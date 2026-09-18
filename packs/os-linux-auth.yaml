@@ -1,0 +1,33 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: os-linux-auth
+  version: 1.0.0
+  description: Linux system authentication and SSH daemon logs (RFC 3164)
+  author: WORM Team
+spec:
+  sourceCategory: os
+  format: syslog
+  match:
+    contains: "sshd"
+  fields:
+    syslog_time:
+      from: syslog_time
+      type: timestamp
+    syslog_host:
+      from: syslog_host
+      type: string
+    syslog_app:
+      from: syslog_app
+      type: string
+    message:
+      from: message
+      type: string
+  map:
+    syslog_time: event.time
+    syslog_host: event.device.hostname
+    syslog_app: event.service.name
+    message: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/os-linux-auth/valid_sshd.log

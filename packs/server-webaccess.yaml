@@ -1,0 +1,58 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: server-webaccess
+  version: 1.0.0
+  description: Nginx and Apache Web Server access logs (Combined Log Format)
+  author: WORM Team
+spec:
+  sourceCategory: server
+  format: text
+  match:
+    regex: "^\\S+\\s+\\S+\\s+\\S+\\s+\\[[^\\]]+\\]\\s+\"[A-Z]+"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "02/Jan/2006:15:04:05 -0700"
+    client_ip:
+      from: client_ip
+      type: ip
+      required: true
+    auth_user:
+      from: auth_user
+      type: string
+    http_method:
+      from: http_method
+      type: string
+    url_path:
+      from: url_path
+      type: string
+    http_version:
+      from: http_version
+      type: string
+    status_code:
+      from: status_code
+      type: integer
+    response_bytes:
+      from: response_bytes
+      type: integer
+    referrer:
+      from: referrer
+      type: string
+    user_agent:
+      from: user_agent
+      type: string
+  map:
+    timestamp: event.time
+    client_ip: event.src_endpoint.ip
+    auth_user: event.actor.user.name
+    http_method: event.http_request.http_method
+    url_path: event.http_request.url.path
+    http_version: event.http_request.version
+    status_code: event.http_response.status_code
+    response_bytes: event.traffic.bytes_out
+    user_agent: event.http_request.user_agent
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/server-webaccess/valid_access.log

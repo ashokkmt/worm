@@ -1,0 +1,60 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: endpoint-ids-alert
+  version: 1.0.0
+  description: Network Intrusion Detection System alerts (Suricata/Snort in CEF format)
+  author: WORM Team
+spec:
+  sourceCategory: endpoint
+  format: cef
+  match:
+    contains: "CEF:0|"
+  fields:
+    device_vendor:
+      from: device_vendor
+      type: string
+    device_product:
+      from: device_product
+      type: string
+    name:
+      from: name
+      type: string
+    severity:
+      from: severity
+      type: integer
+    src:
+      from: src
+      type: ip
+      required: true
+    dst:
+      from: dst
+      type: ip
+      required: true
+    spt:
+      from: spt
+      type: integer
+    dpt:
+      from: dpt
+      type: integer
+    proto:
+      from: proto
+      type: string
+    act:
+      from: act
+      type: string
+    msg:
+      from: msg
+      type: string
+  map:
+    name: event.finding_info.title
+    msg: event.message
+    src: event.src_endpoint.ip
+    spt: event.src_endpoint.port
+    dst: event.dst_endpoint.ip
+    dpt: event.dst_endpoint.port
+    act: event.action
+    severity: event.severity_id
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/endpoint-ids-alert/valid_alert.cef

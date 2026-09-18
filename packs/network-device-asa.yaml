@@ -1,0 +1,29 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: network-device-asa
+  version: 1.0.0
+  description: Cisco ASA perimeter gateway security appliance events
+  author: WORM Team
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "%ASA-"
+  fields:
+    syslog_time:
+      from: syslog_time
+      type: timestamp
+    syslog_host:
+      from: syslog_host
+      type: string
+    message:
+      from: message
+      type: string
+  map:
+    syslog_time: event.time
+    syslog_host: event.device.hostname
+    message: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/network-device-asa/valid_permit.log

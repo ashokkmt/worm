@@ -1,0 +1,49 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: app-payment-gateway
+  version: 1.0.0
+  description: E-Commerce Payment Gateway JSON service log events
+  author: WORM Team
+spec:
+  sourceCategory: application
+  format: json
+  match:
+    fieldEquals:
+      service: "payment-gateway"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05-07:00"
+    level:
+      from: level
+      type: string
+    user_id:
+      from: user_id
+      type: string
+    action:
+      from: action
+      type: string
+    status:
+      from: status
+      type: string
+    message:
+      from: message
+      type: string
+    client_ip:
+      from: client_ip
+      type: ip
+    response_time_ms:
+      from: response_time_ms
+      type: integer
+  map:
+    timestamp: event.time
+    level: event.severity_id
+    message: event.message
+    client_ip: event.src_endpoint.ip
+    action: event.activity_name
+    user_id: event.actor.user.uid
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/app-custom-json/valid_after.json

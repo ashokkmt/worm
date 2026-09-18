@@ -1,0 +1,67 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: network-device-firewall
+  version: 1.0.0
+  description: Palo Alto PAN-OS perimeter firewall traffic and threat events
+  author: WORM Team
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "vendor_product=PAN-OS"
+  fields:
+    syslog_time:
+      from: syslog_time
+      type: timestamp
+    action:
+      from: action
+      type: string
+    src:
+      from: src
+      type: ip
+      required: true
+    sport:
+      from: sport
+      type: integer
+    dst:
+      from: dst
+      type: ip
+      required: true
+    dport:
+      from: dport
+      type: integer
+    bytes_sent:
+      from: bytes_sent
+      type: integer
+    bytes_recv:
+      from: bytes_recv
+      type: integer
+    proto:
+      from: proto
+      type: string
+    rule:
+      from: rule
+      type: string
+    app:
+      from: app
+      type: string
+    session_id:
+      from: session_id
+      type: string
+    vendor_product:
+      from: vendor_product
+      type: string
+  map:
+    syslog_time: event.time
+    action: event.action
+    src: event.src_endpoint.ip
+    sport: event.src_endpoint.port
+    dst: event.dst_endpoint.ip
+    dport: event.dst_endpoint.port
+    bytes_sent: event.traffic.bytes_out
+    bytes_recv: event.traffic.bytes_in
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/network-device-firewall/valid_session.log
+    - testdata/sources/network-device-firewall/valid_deny.log
