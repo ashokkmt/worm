@@ -1,0 +1,3 @@
+timestamp,source_ip,message
+2026-09-20T10:00:00Z,10.0.1.50,"unclosed quote in message
+2026-09-20T10:00:01Z,10.0.1.51,normal

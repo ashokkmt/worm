@@ -1,0 +1,1 @@
+<86>Sep 20 10:20:01 srv-prod-01 sshd[14523]: Accepted publickey for deploy from 10.0.1.100 port 52431 ssh2: RSA SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8

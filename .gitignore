@@ -1,0 +1,8 @@
+plans/
+graphify-out/
+bin/
+data/
+*.db
+*.db-wal
+*.db-shm
+

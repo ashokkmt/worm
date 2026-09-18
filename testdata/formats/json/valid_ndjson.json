@@ -1,0 +1,2 @@
+{"timestamp":"2026-09-20T10:30:00+05:30","service":"auth","user":"alice","status":"success"}
+{"timestamp":"2026-09-20T10:30:01+05:30","service":"auth","user":"bob","status":"failure"}

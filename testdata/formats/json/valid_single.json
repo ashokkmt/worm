@@ -1,0 +1,1 @@
+{"timestamp":"2026-09-20T10:30:00+05:30","level":"ERROR","service":"payment-gateway","trace_id":"abc-123-def","user_id":"user_4821","action":"payment_process","amount":15000.00,"currency":"INR","status":"failed","error_code":"PG_TIMEOUT","message":"Payment gateway timeout after 30s","client_ip":"10.0.1.50","server":"pay-srv-02","response_time_ms":30000}
