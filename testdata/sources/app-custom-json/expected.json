@@ -1,0 +1,24 @@
+{
+  "worm": {
+    "source_category": "application",
+    "parser_pack": "app-payment-gateway",
+    "parser_version": "1.0.0",
+    "core_version": "0.1.0",
+    "schema_version": "1.3.0",
+    "status": "normalized"
+  },
+  "event": {
+    "category_name": "Application Activity",
+    "class_name": "Application Activity",
+    "message": "Payment gateway timeout after 30s",
+    "activity_name": "payment_process",
+    "src_endpoint": {
+      "ip": "10.0.1.50"
+    },
+    "actor": {
+      "user": {
+        "uid": "user_4821"
+      }
+    }
+  }
+}

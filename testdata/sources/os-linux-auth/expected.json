@@ -1,0 +1,22 @@
+{
+  "worm": {
+    "source_category": "os",
+    "source_id": "srv-prod-01",
+    "parser_pack": "os-linux-auth",
+    "parser_version": "1.0.0",
+    "core_version": "0.1.0",
+    "schema_version": "1.3.0",
+    "status": "normalized"
+  },
+  "event": {
+    "category_name": "Authentication",
+    "class_name": "Authentication",
+    "device": {
+      "hostname": "srv-prod-01"
+    },
+    "service": {
+      "name": "sshd"
+    },
+    "message": "Accepted publickey for deploy from 10.0.1.100 port 52431 ssh2: RSA SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8"
+  }
+}

@@ -1,0 +1,1 @@
+10.0.1.50 - john [20/Sep/2026:10:15:01 +0530] "GET /dashboard HTTP/1.1" 200 15234 "https://internal.example.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"

@@ -1,0 +1,1 @@
+CEF:0|Suricata|IDPS|6.0.0|2001219|ET SCAN Potential SSH Scan|6|src=45.33.32.156 dst=10.0.1.5 spt=44100 dpt=22 proto=TCP cnt=15 act=Alert msg=Potential SSH brute force detected cs1=ET/Open cs1Label=RuleCategory

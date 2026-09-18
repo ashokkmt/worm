@@ -1,0 +1,1 @@
+<12>1 2026-09-20T10:06:01+05:30 pa-fw-01 paloalto - TRAFFIC - vendor_product=PAN-OS action=deny src=45.33.32.156 dst=10.0.1.10 sport=44891 dport=3389 proto=tcp bytes_sent=0 bytes_recv=0 rule=block-rdp-inbound session_id=8827400 app=ms-rdp

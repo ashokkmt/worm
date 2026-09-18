@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WORM Parser Pack Schema",
+  "description": "JSON schema for declarative YAML parser packs in WORM",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["worm.io/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["LogSource"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "author": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["sourceCategory", "format", "match", "fields", "map"],
+      "additionalProperties": false,
+      "properties": {
+        "sourceCategory": {
+          "type": "string",
+          "enum": [
+            "network_device",
+            "server",
+            "os",
+            "endpoint",
+            "application",
+            "database",
+            "cloud",
+            "container",
+            "iam",
+            "iot",
+            "other"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": ["syslog", "json", "csv", "cef", "text", "*"]
+        },
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "contains": { "type": "string" },
+            "regex": { "type": "string" },
+            "fieldEquals": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["from", "type"],
+            "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string" },
+              "type": {
+                "type": "string",
+                "enum": ["ip", "integer", "float", "timestamp", "string", "boolean"]
+              },
+              "required": { "type": "boolean" },
+              "layout": { "type": "string" }
+            }
+          }
+        },
+        "map": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "preserveUnmapped": {
+          "type": "boolean"
+        },
+        "fixtures": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

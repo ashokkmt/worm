@@ -1,0 +1,28 @@
+{
+  "worm": {
+    "source_category": "endpoint",
+    "parser_pack": "endpoint-ids-alert",
+    "parser_version": "1.0.0",
+    "core_version": "0.1.0",
+    "schema_version": "1.3.0",
+    "status": "normalized"
+  },
+  "event": {
+    "category_name": "Findings",
+    "class_name": "Security Finding",
+    "finding_info": {
+      "title": "ET SCAN Potential SSH Scan"
+    },
+    "message": "Potential SSH brute force detected",
+    "src_endpoint": {
+      "ip": "45.33.32.156",
+      "port": 44100
+    },
+    "dst_endpoint": {
+      "ip": "10.0.1.5",
+      "port": 22
+    },
+    "action": "Alert",
+    "severity_id": 6
+  }
+}

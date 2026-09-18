@@ -1,0 +1,5 @@
+10.0.1.50 - john [20/Sep/2026:10:16:01 +0530] "GET /index.html HTTP/1.1" 200 8192 "-" "Mozilla/5.0"
+THIS IS NOT A VALID LOG LINE AND SHOULD BE QUARANTINED
+10.0.1.51 - - [20/Sep/2026:10:16:02 +0530] "GET /style.css HTTP/1.1" 200 2048 "-" "Mozilla/5.0"
+10.0.1.50 - john [INVALID_DATE] "GET /broken HTTP/1.1" 200 100 "-" "Mozilla/5.0"
+10.0.1.52 - - [20/Sep/2026:10:16:03 +0530] "GET /app.js HTTP/1.1" 304 0 "-" "Mozilla/5.0"

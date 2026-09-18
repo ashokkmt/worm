@@ -1,0 +1,3 @@
+<85>Sep 20 10:25:01 srv-prod-01 sudo[14700]:   ashok : TTY=pts/0 ; PWD=/home/ashok ; USER=root ; COMMAND=/bin/systemctl restart nginx
+<85>Sep 20 10:25:30 srv-prod-01 sudo[14705]:   deploy : TTY=pts/1 ; PWD=/opt/app ; USER=root ; COMMAND=/usr/bin/docker compose up -d
+<84>Sep 20 10:26:00 srv-prod-01 sudo[14710]:   unknown : user NOT in sudoers ; TTY=pts/2 ; PWD=/tmp ; USER=root ; COMMAND=/bin/cat /etc/shadow
