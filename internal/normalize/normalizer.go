@@ -197,5 +197,12 @@ func enrichTaxonomyDefaults(event map[string]any, category string) {
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "Application Activity"
 		}
+	case "database":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "System Activity"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "Database Activity"
+		}
 	}
 }

@@ -51,6 +51,7 @@ func TestLoadPack_AllPacks(t *testing.T) {
 		"os-linux-auth",
 		"endpoint-ids-alert",
 		"app-payment-gateway",
+		"database-audit",
 	}
 
 	if len(snap.ListPacks()) != len(expectedPacks) {
@@ -219,6 +220,11 @@ func TestSnapshot_Matching(t *testing.T) {
 			name:         "Payment Gateway JSON",
 			fixturePath:  "testdata/sources/app-custom-json/valid_after.json",
 			expectedPack: "app-payment-gateway",
+		},
+		{
+			name:         "Database Audit CSV",
+			fixturePath:  "testdata/sources/database-audit/valid_audit.csv",
+			expectedPack: "database-audit",
 		},
 	}
 

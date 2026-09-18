@@ -109,6 +109,14 @@ func TestNormalize_AllSixSourcesGolden(t *testing.T) {
 			transport:    "http_post",
 			sourceIP:     "10.0.1.50",
 		},
+		{
+			name:         "Database Audit CSV",
+			fixturePath:  "testdata/sources/database-audit/valid_audit.csv",
+			expectedPath: "testdata/sources/database-audit/expected.json",
+			packName:     "database-audit",
+			transport:    "file_spool",
+			sourceIP:     "10.0.1.50",
+		},
 	}
 
 	for _, s := range sources {
