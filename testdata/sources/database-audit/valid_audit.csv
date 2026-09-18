@@ -1,0 +1,4 @@
+timestamp,source_type,client_ip,server_ip,port,user_id,action,statement
+2026-09-20T10:00:00Z,postgres_audit,10.0.1.50,10.0.1.5,5432,pg_admin,query,SELECT * FROM users WHERE active = true
+2026-09-20T10:00:01Z,postgres_audit,10.0.1.51,10.0.1.5,5432,app_service,update,UPDATE accounts SET balance = balance + 100 WHERE id = 42
+2026-09-20T10:00:02Z,postgres_audit,45.33.32.156,10.0.1.5,5432,root,login_failed,FATAL: password authentication failed for user root

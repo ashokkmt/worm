@@ -1,0 +1,79 @@
+name: worm-simulators-only
+
+services:
+  # 1. Simulates Palo Alto Firewall sending Syslog UDP to local WORM (:1514)
+  sim-firewall:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-firewall
+    command: ["--source", "firewall", "--scenario", "mixed", "--format", "syslog-udp", "--target", "host.docker.internal:1514", "--rate", "2", "--count", "0"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 2. Simulates Cisco ASA Firewall sending Syslog UDP to local WORM (:1514)
+  sim-asa:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-asa
+    command: ["--source", "asa", "--scenario", "mixed", "--format", "syslog-udp", "--target", "host.docker.internal:1514", "--rate", "2", "--count", "0"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 3. Simulates Linux SSHD / auth.log streaming Syslog TCP to local WORM (:1514)
+  sim-sshd:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-sshd
+    command: ["--source", "sshd", "--scenario", "bruteforce", "--format", "syslog-tcp", "--target", "host.docker.internal:1514", "--rate", "1", "--count", "0"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 4. Simulates Suricata/Snort IDS alerts in CEF over Syslog UDP to local WORM (:1514)
+  sim-ids:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-ids
+    command: ["--source", "ids", "--scenario", "scan", "--format", "syslog-udp", "--target", "host.docker.internal:1514", "--rate", "1", "--count", "0"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 5. Simulates Nginx Web Server writing Combined Log Format into local spool inbox
+  sim-webserver:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-webserver
+    command: ["--source", "webserver", "--scenario", "mixed", "--format", "file", "--output-dir", "/data/inbox", "--rate", "2", "--count", "0"]
+    volumes:
+      - ./data/inbox:/data/inbox
+    restart: unless-stopped
+
+  # 6. Simulates Payment Gateway microservice posting JSON events via HTTP REST to local WORM (:8080)
+  sim-app:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-app
+    command: ["--source", "app", "--scenario", "mixed", "--format", "http-post", "--target", "http://host.docker.internal:8080/api/v1/ingest", "--rate", "4", "--count", "0"]
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # 7. Simulates Database Server generating CSV audit logs into local spool inbox
+  sim-database:
+    build:
+      context: .
+      dockerfile: docker/sim/Dockerfile
+    container_name: sim-database
+    command: ["--source", "database", "--scenario", "mixed", "--format", "file", "--output-dir", "/data/inbox", "--rate", "1", "--count", "0"]
+    volumes:
+      - ./data/inbox:/data/inbox
+    restart: unless-stopped
