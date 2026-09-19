@@ -143,6 +143,48 @@ func (p *Pipeline) Submit(record model.IngestedRecord) error {
 	}
 }
 
+// SubmitWait enqueues an ingested record, waiting with backpressure until space is available or context expires.
+func (p *Pipeline) SubmitWait(ctx context.Context, record model.IngestedRecord) error {
+	if p.closed.Load() {
+		return fmt.Errorf("pipeline is closed")
+	}
+
+	p.accepted.Add(1)
+	p.pending.Add(1)
+
+	select {
+	case p.inbound <- record:
+		return nil
+	case <-ctx.Done():
+		p.pending.Add(-1)
+		return ctx.Err()
+	case <-p.ctx.Done():
+		p.pending.Add(-1)
+		return p.ctx.Err()
+	}
+}
+
+// ConnectIngest drains records from an ingestion stream channel directly into the pipeline with backpressure.
+func (p *Pipeline) ConnectIngest(ctx context.Context, in <-chan model.IngestedRecord) {
+	p.wg.Add(1)
+	go func() {
+		defer p.wg.Done()
+		for {
+			select {
+			case rec, ok := <-in:
+				if !ok {
+					return
+				}
+				_ = p.SubmitWait(ctx, rec)
+			case <-ctx.Done():
+				return
+			case <-p.ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 // SubmitSync processes an ingested record synchronously within the calling goroutine.
 func (p *Pipeline) SubmitSync(ctx context.Context, record model.IngestedRecord) error {
 	if p.closed.Load() {
