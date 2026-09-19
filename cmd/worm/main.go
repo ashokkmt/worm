@@ -9,23 +9,86 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
+	"worm/internal/api"
 	"worm/internal/ingest"
 	"worm/internal/model"
 	"worm/internal/output"
 	"worm/internal/packs"
 	"worm/internal/pipeline"
 	"worm/internal/rawstore"
+	"worm/web"
 )
 
 func main() {
+	// 0. Ergonomic CLI dispatch (e.g. ./bin/worm -packs, ./bin/worm -replay all, ./bin/worm -stop, etc.)
+	if len(os.Args) > 1 {
+		cmd := os.Args[1]
+		switch cmd {
+		case "stop", "-stop", "--stop":
+			stopDaemon(defaultPIDFile)
+			return
+		case "status", "-status", "--status":
+			statusDaemon(defaultPIDFile, ":9090")
+			return
+		case "packs", "-packs", "--packs":
+			for i, a := range os.Args {
+				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+					applyPackCLI(os.Args[i+1], ":9090", "packs")
+					return
+				}
+			}
+			listPacksCLI(":9090", "packs")
+			return
+		case "pack", "-pack", "--pack":
+			for i, a := range os.Args {
+				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+					applyPackCLI(os.Args[i+1], ":9090", "packs")
+					return
+				}
+			}
+			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
+				viewPackCLI(os.Args[2], ":9090", "packs")
+				return
+			}
+			listPacksCLI(":9090", "packs")
+			return
+		case "replay", "-replay", "--replay":
+			if len(os.Args) >= 3 {
+				target := os.Args[2]
+				if target == "all" || target == "--all" {
+					replayAllCLI(":9090")
+					return
+				}
+				replaySingleCLI(target, ":9090")
+				return
+			}
+			listQuarantineCLI(":9090", "data/worm.db")
+			return
+		case "replay-all", "-replay-all", "--replay-all":
+			replayAllCLI(":9090")
+			return
+		}
+	}
+
 	dbPath := flag.String("db", "data/worm.db", "Path to SQLite raw store database")
-	packsDir := flag.String("packs", "packs", "Path to YAML parser packs directory")
+	packsDir := flag.String("packs-dir", "packs", "Path to YAML parser packs directory")
 	workers := flag.Int("workers", 4, "Number of concurrent pipeline workers")
 	readStdin := flag.Bool("stdin", false, "Read logs from stdin line-by-line")
 	verifyRawID := flag.String("verify", "", "Cryptographically verify a raw record by raw_id")
+	verifyEventID := flag.String("verify-event", "", "Cryptographically verify a normalized event by event_id")
+
+	// Detached daemon & CLI flags
+	detached := flag.Bool("d", false, "Run WORM engine in detached/daemon mode in the background")
+	stopFlag := flag.Bool("stop", false, "Stop running background WORM engine daemon")
+	statusFlag := flag.Bool("status", false, "Check status of background WORM engine daemon")
+	packName := flag.String("pack", "", "View YAML content of a pack, or use with -f to install")
+	fileFlag := flag.String("f", "", "YAML pack file path to install and reconcile")
+	replayFlag := flag.String("replay", "", "Manage quarantine DLQ: list pending logs, or replay with <quarantine_id> or 'all'")
+	replayAllFlag := flag.Bool("replay-all", false, "Replay all quarantined DLQ records")
 
 	// Multi-transport ingestion flags
 	syslogUDP := flag.String("syslog-udp", ":514", "UDP address for Syslog listener (:1514 for non-root, 'none' to disable)")
@@ -39,7 +102,59 @@ func main() {
 	outputFile := flag.String("output-file", "data/output/normalized.ndjson", "Path to write normalized NDJSON output ('none' to disable)")
 	stdoutOutput := flag.Bool("stdout", true, "Emit normalized NDJSON events to stdout")
 
+	// Management UI and Control Plane flag
+	uiAddr := flag.String("ui", ":9090", "Address for Management Web UI and Control Plane API (:9090 default, 'none' to disable)")
+
 	flag.Parse()
+
+	// Handle standalone actions parsed via flags
+	if *stopFlag {
+		stopDaemon(defaultPIDFile)
+		return
+	}
+	if *statusFlag {
+		statusDaemon(defaultPIDFile, *uiAddr)
+		return
+	}
+	if *packName != "" {
+		if *fileFlag != "" {
+			applyPackCLI(*fileFlag, *uiAddr, *packsDir)
+			return
+		}
+		viewPackCLI(*packName, *uiAddr, *packsDir)
+		return
+	}
+	if *fileFlag != "" {
+		applyPackCLI(*fileFlag, *uiAddr, *packsDir)
+		return
+	}
+	if *replayAllFlag {
+		replayAllCLI(*uiAddr)
+		return
+	}
+	if *replayFlag != "" {
+		if *replayFlag == "all" {
+			replayAllCLI(*uiAddr)
+			return
+		}
+		if *replayFlag == "list" {
+			listQuarantineCLI(*uiAddr, *dbPath)
+			return
+		}
+		replaySingleCLI(*replayFlag, *uiAddr)
+		return
+	}
+
+	// Detached background mode
+	if *detached {
+		runDaemonMode(defaultPIDFile, defaultLogFile, *uiAddr)
+		return
+	}
+
+	// Record PID if running as daemon child
+	if os.Getenv("WORM_DAEMON") == "1" {
+		_ = os.WriteFile(defaultPIDFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
+	}
 
 	// Ensure directory exists for database
 	if dir := filepath.Dir(*dbPath); dir != "." && dir != "" {
@@ -82,6 +197,37 @@ func main() {
 		fmt.Printf("Byte Count:   %d bytes\n", raw.ByteCount)
 		fmt.Printf("Payload Preview:\n%s\n", string(raw.Payload))
 		fmt.Printf("--------------------------------------\n")
+		return
+	}
+
+	// Normalized event verification mode
+	if *verifyEventID != "" {
+		ctx := context.Background()
+		report, err := store.VerifyNormalized(ctx, *verifyEventID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Event verification failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("\n--- Cryptographic Normalized Event Integrity Report ---\n")
+		fmt.Printf("Event ID:     %s\n", report.EventID)
+		fmt.Printf("Raw ID:       %s\n", report.RawID)
+		fmt.Printf("Stored Hash:  %s\n", report.StoredHash)
+		fmt.Printf("Actual Hash:  %s\n", report.ComputedHash)
+		fmt.Printf("Message:      %s\n", report.StoredMessage)
+		fmt.Printf("Raw Source:   ")
+		if report.RawValid {
+			fmt.Println("PASSED (Cryptographically Exact)")
+		} else {
+			fmt.Println("FAILED (RAW LOG TAMPERED)")
+		}
+		fmt.Printf("Integrity:    ")
+		if report.Passed {
+			fmt.Println("PASSED (Cryptographically Exact)")
+		} else {
+			fmt.Printf("FAILED (TAMPER DETECTED: %s)\n", report.FailureReason)
+		}
+		fmt.Printf("-------------------------------------------------------\n")
 		return
 	}
 
@@ -158,6 +304,27 @@ func main() {
 		fmt.Fprintf(os.Stderr, "WARNING: Ingest manager start error: %v\n", err)
 	}
 	p.ConnectIngest(ctx, mgr.Channel())
+
+	// 5. Initialize Management Control Plane & UI Server
+	var uiServer *api.Server
+	if *uiAddr != "" && *uiAddr != "none" {
+		cfgInfo := api.ConfigInfo{
+			UIAddress:  *uiAddr,
+			SyslogUDP:  *syslogUDP,
+			SyslogTCP:  *syslogTCP,
+			HTTPIngest: *httpAddr,
+			InboxDir:   *inboxDir,
+			DBPath:     *dbPath,
+			Workers:    *workers,
+			Version:    "1.0.0",
+		}
+		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
+		if err := uiServer.Start(); err != nil {
+			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
+		} else {
+			fmt.Fprintf(os.Stderr, " Management Control Plane & UI active: http://localhost%s\n", *uiAddr)
+		}
+	}
 
 	hasListeners := (*syslogUDP != "" && *syslogUDP != "none") ||
 		(*syslogTCP != "" && *syslogTCP != "none") ||
@@ -252,11 +419,20 @@ func main() {
 	}
 
 	// Graceful shutdown sequence
+	if uiServer != nil {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = uiServer.Stop(shutdownCtx)
+		shutdownCancel()
+	}
 	cancel()
 	_ = mgr.Stop()
 	p.Stop()
 	_ = compositeSink.Flush()
 	_ = compositeSink.Close()
+
+	if os.Getenv("WORM_DAEMON") == "1" {
+		_ = os.Remove(defaultPIDFile)
+	}
 
 	stats := p.Stats()
 	valid, reason := stats.VerifyInvariant()
