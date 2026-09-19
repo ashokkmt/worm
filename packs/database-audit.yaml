@@ -1,0 +1,51 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: database-audit
+  version: 1.0.0
+  description: PostgreSQL and MySQL database audit log CSV exports
+  author: WORM Team
+spec:
+  sourceCategory: database
+  format: csv
+  match:
+    fieldEquals:
+      source_type: "postgres_audit"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z07:00"
+    client_ip:
+      from: client_ip
+      type: ip
+      required: true
+    server_ip:
+      from: server_ip
+      type: ip
+    port:
+      from: port
+      type: integer
+    user_id:
+      from: user_id
+      type: string
+    action:
+      from: action
+      type: string
+    statement:
+      from: statement
+      type: string
+    source_type:
+      from: source_type
+      type: string
+  map:
+    timestamp: event.time
+    action: event.activity_name
+    statement: event.message
+    client_ip: event.src_endpoint.ip
+    server_ip: event.dst_endpoint.ip
+    port: event.dst_endpoint.port
+    user_id: event.actor.user.uid
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/database-audit/valid_audit.csv

@@ -1,0 +1,28 @@
+{
+  "worm": {
+    "source_category": "database",
+    "parser_pack": "database-audit",
+    "parser_version": "1.0.0",
+    "core_version": "0.1.0",
+    "schema_version": "1.3.0",
+    "status": "normalized"
+  },
+  "event": {
+    "category_name": "System Activity",
+    "class_name": "Database Activity",
+    "message": "SELECT * FROM users WHERE active = true",
+    "activity_name": "query",
+    "src_endpoint": {
+      "ip": "10.0.1.50"
+    },
+    "dst_endpoint": {
+      "ip": "10.0.1.5",
+      "port": 5432
+    },
+    "actor": {
+      "user": {
+        "uid": "pg_admin"
+      }
+    }
+  }
+}
