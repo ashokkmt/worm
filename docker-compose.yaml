@@ -11,6 +11,7 @@ services:
       - "514:514/udp"
       - "514:514/tcp"
       - "8080:8080/tcp"
+      - "9090:9090/tcp"
     volumes:
       - ./data/worm.db:/data/worm.db
       - ./data/inbox:/data/inbox
@@ -113,6 +114,17 @@ services:
       - ./data/inbox:/data/inbox
     depends_on:
       - worm
+    restart: unless-stopped
+  # 8. Web-based SQLite GUI Viewer
+  sqlite-web:
+    build:
+      context: .
+      dockerfile: docker/sqlite-web/Dockerfile
+    container_name: worm-sqlite-web
+    ports:
+      - "8085:8080/tcp"
+    volumes:
+      - ./data:/data:ro
     restart: unless-stopped
     networks:
       - worm-net

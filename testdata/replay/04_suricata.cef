@@ -1,0 +1,1 @@
+CEF:0|Suricata|IDPS|6.0.0|2100498|ET SCAN Potential Web Path Traversal|8|src=203.0.113.99 dst=10.0.1.100 spt=55123 dpt=80 proto=TCP act=Alert msg=Path traversal attempt detected cs1=ET/Open cs1Label=RuleCategory

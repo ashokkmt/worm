@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -49,43 +50,82 @@ func New(dbPath string) (*RawStore, error) {
 		}
 	}
 
-	schema := `
-	CREATE TABLE IF NOT EXISTS raw_events (
-		raw_id TEXT PRIMARY KEY,
-		raw_sha256 TEXT NOT NULL,
-		byte_count INTEGER NOT NULL,
-		transport TEXT NOT NULL,
-		source_ip TEXT NOT NULL,
-		received_at TEXT NOT NULL,
-		payload BLOB NOT NULL,
-		status TEXT NOT NULL
-	);
-	CREATE INDEX IF NOT EXISTS idx_raw_events_sha ON raw_events(raw_sha256);
-	CREATE INDEX IF NOT EXISTS idx_raw_events_status ON raw_events(status);
-
-	CREATE TABLE IF NOT EXISTS quarantine (
-		quarantine_id TEXT PRIMARY KEY,
-		raw_id TEXT NOT NULL,
-		raw_sha256 TEXT NOT NULL,
-		stage TEXT NOT NULL,
-		reason TEXT NOT NULL,
-		error_details TEXT,
-		raw_preview TEXT NOT NULL,
-		candidate_packs TEXT,
-		replay_eligible INTEGER NOT NULL,
-		quarantined_at TEXT NOT NULL,
-		replayed_at TEXT,
-		FOREIGN KEY (raw_id) REFERENCES raw_events(raw_id)
-	);
-	CREATE INDEX IF NOT EXISTS idx_quarantine_raw ON quarantine(raw_id);
-	CREATE INDEX IF NOT EXISTS idx_quarantine_reason ON quarantine(reason);
-	`
-	if _, err := db.Exec(schema); err != nil {
+	if err := initSchema(db); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("failed to initialize raw store schema: %w", err)
+		return nil, err
 	}
 
 	return &RawStore{db: db}, nil
+}
+
+// CurrentSchemaVersion tracks the active database schema migration version.
+const CurrentSchemaVersion = 1
+
+func initSchema(db *sql.DB) error {
+	var version int
+	if err := db.QueryRow("PRAGMA user_version;").Scan(&version); err != nil {
+		return fmt.Errorf("failed to read user_version: %w", err)
+	}
+
+	if version < 1 {
+		schema := `
+		CREATE TABLE IF NOT EXISTS raw_events (
+			raw_id TEXT PRIMARY KEY,
+			raw_sha256 TEXT NOT NULL,
+			byte_count INTEGER NOT NULL,
+			transport TEXT NOT NULL,
+			source_ip TEXT NOT NULL,
+			received_at TEXT NOT NULL,
+			payload BLOB NOT NULL,
+			status TEXT NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_raw_events_sha ON raw_events(raw_sha256);
+		CREATE INDEX IF NOT EXISTS idx_raw_events_status ON raw_events(status);
+
+		CREATE TABLE IF NOT EXISTS quarantine (
+			quarantine_id TEXT PRIMARY KEY,
+			raw_id TEXT NOT NULL,
+			raw_sha256 TEXT NOT NULL,
+			stage TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			error_details TEXT,
+			raw_preview TEXT NOT NULL,
+			candidate_packs TEXT,
+			replay_eligible INTEGER NOT NULL,
+			quarantined_at TEXT NOT NULL,
+			replayed_at TEXT,
+			FOREIGN KEY (raw_id) REFERENCES raw_events(raw_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_quarantine_raw ON quarantine(raw_id);
+		CREATE INDEX IF NOT EXISTS idx_quarantine_reason ON quarantine(reason);
+
+		CREATE TABLE IF NOT EXISTS normalized_events (
+			event_id TEXT PRIMARY KEY,
+			raw_id TEXT NOT NULL,
+			source_category TEXT NOT NULL,
+			source_id TEXT NOT NULL,
+			severity_id TEXT,
+			activity_name TEXT,
+			message TEXT,
+			event_time INTEGER NOT NULL,
+			received_time TEXT NOT NULL,
+			event_json TEXT NOT NULL,
+			event_sha256 TEXT NOT NULL DEFAULT '',
+			FOREIGN KEY (raw_id) REFERENCES raw_events(raw_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_norm_cat ON normalized_events(source_category);
+		CREATE INDEX IF NOT EXISTS idx_norm_time ON normalized_events(event_time);
+		`
+		if _, err := db.Exec(schema); err != nil {
+			return fmt.Errorf("failed to initialize raw store schema v1: %w", err)
+		}
+
+		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d;", CurrentSchemaVersion)); err != nil {
+			return fmt.Errorf("failed to set user_version: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // Store commits verbatim raw bytes, calculates SHA-256 digest, and assigns an immutable raw ID.
@@ -381,6 +421,427 @@ func (s *RawStore) MarkReplayed(ctx context.Context, qID string) error {
 		return fmt.Errorf("quarantine entry not found for replay update: %s", qID)
 	}
 	return nil
+}
+
+// GetReplayPendingIDs returns quarantine IDs eligible for reprocessing.
+// If includeAlreadyReplayed is false, returns only records where replayed_at IS NULL.
+func (s *RawStore) GetReplayPendingIDs(ctx context.Context, includeAlreadyReplayed bool) ([]string, error) {
+	query := `SELECT quarantine_id FROM quarantine WHERE replay_eligible = 1 AND replayed_at IS NULL ORDER BY quarantined_at ASC;`
+	if includeAlreadyReplayed {
+		query = `SELECT quarantine_id FROM quarantine WHERE replay_eligible = 1 ORDER BY quarantined_at ASC;`
+	}
+
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query replayable quarantine IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// DeleteQuarantine removes a record from the quarantine table once it has been successfully replayed.
+func (s *RawStore) DeleteQuarantine(ctx context.Context, qID string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	query := `DELETE FROM quarantine WHERE quarantine_id = ?;`
+	_, err := s.db.ExecContext(ctx, query, qID)
+	return err
+}
+
+// CountRaw returns the total number of raw events in storage.
+func (s *RawStore) CountRaw(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM raw_events;").Scan(&count)
+	return count, err
+}
+
+// CountNormalized returns the total number of normalized events in storage.
+func (s *RawStore) CountNormalized(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM normalized_events;").Scan(&count)
+	return count, err
+}
+
+// CountQuarantine returns the total number of unresolved quarantine records in storage.
+func (s *RawStore) CountQuarantine(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM quarantine;").Scan(&count)
+	return count, err
+}
+
+// StoreNormalized inserts or updates a normalized event in the SQLite database.
+func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedEvent) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	data, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal normalized event: %w", err)
+	}
+
+	var eventTime int64
+	if tVal, ok := event.OCSF["time"].(int64); ok {
+		eventTime = tVal
+	} else if tValFloat, ok := event.OCSF["time"].(float64); ok {
+		eventTime = int64(tValFloat)
+	} else {
+		eventTime = event.Worm.ReceivedTime.UnixMilli()
+	}
+
+	var severityStr string
+	if sVal, ok := event.OCSF["severity_id"]; ok && sVal != nil {
+		severityStr = fmt.Sprintf("%v", sVal)
+	}
+
+	var activityName string
+	if aVal, ok := event.OCSF["activity_name"].(string); ok {
+		activityName = aVal
+	}
+
+	var msg string
+	if mVal, ok := event.OCSF["message"].(string); ok {
+		msg = mVal
+	}
+
+	// Check if a normalized projection already exists for this raw_id to prevent duplicates on repeated replay
+	var existingEventID string
+	err = s.db.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id = ? LIMIT 1;", event.Worm.RawID).Scan(&existingEventID)
+	if err == nil && existingEventID != "" {
+		event.Worm.EventID = existingEventID
+		data, _ = json.Marshal(event)
+	}
+
+	eventHash := sha256.Sum256(data)
+	eventSHA256 := hex.EncodeToString(eventHash[:])
+
+	query := `
+	INSERT INTO normalized_events (
+		event_id, raw_id, source_category, source_id, severity_id, activity_name, message, event_time, received_time, event_json, event_sha256
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(event_id) DO UPDATE SET
+		event_json = excluded.event_json,
+		event_sha256 = excluded.event_sha256,
+		message = excluded.message;
+	`
+	_, err = s.db.ExecContext(ctx, query,
+		event.Worm.EventID,
+		event.Worm.RawID,
+		event.Worm.SourceCategory,
+		event.Worm.SourceID,
+		severityStr,
+		activityName,
+		msg,
+		eventTime,
+		event.Worm.ReceivedTime.Format(time.RFC3339Nano),
+		string(data),
+		eventSHA256,
+	)
+	return err
+}
+
+// ListNormalized retrieves paginated normalized events with optional category and severity filtering.
+func (s *RawStore) ListNormalized(ctx context.Context, category, severity, search string, limit, offset int) ([]*model.NormalizedEvent, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var conditions []string
+	var args []any
+
+	if category != "" && category != "all" {
+		conditions = append(conditions, "source_category = ?")
+		args = append(args, category)
+	}
+	if severity != "" && severity != "all" {
+		conditions = append(conditions, "severity_id = ?")
+		args = append(args, severity)
+	}
+	if search != "" {
+		conditions = append(conditions, "(message LIKE ? OR source_id LIKE ? OR event_id LIKE ?)")
+		pattern := "%" + search + "%"
+		args = append(args, pattern, pattern, pattern)
+	}
+
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM normalized_events %s;", whereClause)
+	var total int
+	if err := s.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count normalized events: %w", err)
+	}
+
+	dataQuery := fmt.Sprintf(`
+		SELECT event_json
+		FROM normalized_events
+		%s
+		ORDER BY event_time DESC
+		LIMIT ? OFFSET ?;
+	`, whereClause)
+
+	dataArgs := append(args, limit, offset)
+	rows, err := s.db.QueryContext(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list normalized events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []*model.NormalizedEvent
+	for rows.Next() {
+		var jsonStr string
+		if err := rows.Scan(&jsonStr); err != nil {
+			return nil, 0, err
+		}
+		var evt model.NormalizedEvent
+		if err := json.Unmarshal([]byte(jsonStr), &evt); err != nil {
+			continue
+		}
+		events = append(events, &evt)
+	}
+
+	return events, total, nil
+}
+
+// GetNormalizedByID retrieves a single normalized event by its unique event ID.
+func (s *RawStore) GetNormalizedByID(ctx context.Context, eventID string) (*model.NormalizedEvent, error) {
+	query := `SELECT event_json FROM normalized_events WHERE event_id = ?;`
+	var jsonStr string
+	err := s.db.QueryRowContext(ctx, query, eventID).Scan(&jsonStr)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("event not found: %s", eventID)
+		}
+		return nil, fmt.Errorf("failed to query event %s: %w", eventID, err)
+	}
+
+	var evt model.NormalizedEvent
+	if err := json.Unmarshal([]byte(jsonStr), &evt); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal event json: %w", err)
+	}
+	return &evt, nil
+}
+
+// NormalizedVerificationReport holds the cryptographic verification report for a normalized event.
+type NormalizedVerificationReport struct {
+	EventID         string `json:"event_id"`
+	RawID           string `json:"raw_id"`
+	StoredHash      string `json:"stored_hash"`
+	ComputedHash    string `json:"computed_hash"`
+	HashMatches     bool   `json:"hash_matches"`
+	StoredMessage   string `json:"stored_message"`
+	ExpectedMessage string `json:"expected_message"`
+	MessageMatches  bool   `json:"message_matches"`
+	RawValid        bool   `json:"raw_valid"`
+	Passed          bool   `json:"passed"`
+	Status          string `json:"status"`
+	FailureReason   string `json:"failure_reason,omitempty"`
+}
+
+// VerifyNormalized verifies the cryptographic integrity of a normalized event:
+// 1. Checks that sha256(event_json) matches event_sha256.
+// 2. Checks that the column message matches the message declared in event_json.
+// 3. Checks that the underlying raw wire datagram in raw_events is untampered.
+func (s *RawStore) VerifyNormalized(ctx context.Context, eventID string) (*NormalizedVerificationReport, error) {
+	query := `SELECT event_id, raw_id, message, event_json, event_sha256 FROM normalized_events WHERE event_id = ?;`
+	var (
+		evtID      string
+		rawID      string
+		colMsg     string
+		eventJSON  string
+		storedHash string
+	)
+	err := s.db.QueryRowContext(ctx, query, eventID).Scan(&evtID, &rawID, &colMsg, &eventJSON, &storedHash)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("normalized event not found: %s", eventID)
+		}
+		return nil, fmt.Errorf("query error for event %s: %w", eventID, err)
+	}
+
+	computed := sha256.Sum256([]byte(eventJSON))
+	computedHex := hex.EncodeToString(computed[:])
+
+	hashMatches := (storedHash != "" && computedHex == storedHash)
+
+	// Extract message from event_json to check column integrity
+	var parsed model.NormalizedEvent
+	expectedMsg := ""
+	if err := json.Unmarshal([]byte(eventJSON), &parsed); err == nil {
+		if m, ok := parsed.OCSF["message"].(string); ok {
+			expectedMsg = m
+		}
+	}
+	messageMatches := (colMsg == expectedMsg)
+
+	// Verify raw event and cross-check that message exists in raw wire payload
+	rawMatches, _, rawErr := s.Verify(ctx, rawID)
+	rawValid := (rawErr == nil && rawMatches)
+	rawEvt, _ := s.Retrieve(ctx, rawID)
+
+	rawContentMatches := true
+	if rawEvt != nil && colMsg != "" {
+		if !strings.Contains(string(rawEvt.Payload), colMsg) {
+			rawContentMatches = false
+		}
+	}
+
+	passed := hashMatches && messageMatches && rawValid && rawContentMatches
+
+	report := &NormalizedVerificationReport{
+		EventID:         evtID,
+		RawID:           rawID,
+		StoredHash:      storedHash,
+		ComputedHash:    computedHex,
+		HashMatches:     hashMatches,
+		StoredMessage:   colMsg,
+		ExpectedMessage: expectedMsg,
+		MessageMatches:  messageMatches,
+		RawValid:        rawValid,
+		Passed:          passed,
+		Status:          "PASSED",
+	}
+
+	if !passed {
+		report.Status = "TAMPER DETECTED"
+		var reasons []string
+		if !hashMatches {
+			reasons = append(reasons, "event_json payload was modified (hash mismatch)")
+		}
+		if !messageMatches {
+			reasons = append(reasons, fmt.Sprintf("message column (%q) does not match event_json payload (%q)", colMsg, expectedMsg))
+		}
+		if !rawContentMatches {
+			reasons = append(reasons, fmt.Sprintf("message (%q) does not exist in original raw wire log (tampered projection)", colMsg))
+		}
+		if !rawValid {
+			reasons = append(reasons, "parent raw event wire bytes were modified or corrupted")
+		}
+		report.FailureReason = strings.Join(reasons, "; ")
+	}
+
+	return report, nil
+}
+
+// ListQuarantinePaged retrieves a paginated list of dead-letter quarantine entries.
+func (s *RawStore) ListQuarantinePaged(ctx context.Context, limit, offset int) ([]model.QuarantineEntry, int, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	var total int
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM quarantine;").Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+	SELECT quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
+	FROM quarantine
+	ORDER BY quarantined_at DESC
+	LIMIT ? OFFSET ?;
+	`
+	rows, err := s.db.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var entries []model.QuarantineEntry
+	for rows.Next() {
+		var (
+			e            model.QuarantineEntry
+			candidateStr sql.NullString
+			replayInt    int
+			qAtStr       string
+			rAtStr       sql.NullString
+		)
+		err := rows.Scan(
+			&e.QuarantineID,
+			&e.RawID,
+			&e.RawSHA256,
+			&e.Stage,
+			&e.Reason,
+			&e.ErrorDetails,
+			&e.RawPreview,
+			&candidateStr,
+			&replayInt,
+			&qAtStr,
+			&rAtStr,
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		if candidateStr.Valid && candidateStr.String != "" {
+			e.CandidatePacks = strings.Split(candidateStr.String, ",")
+		}
+		e.ReplayEligible = (replayInt == 1)
+		t, _ := time.Parse(time.RFC3339Nano, qAtStr)
+		e.QuarantinedAt = t
+		if rAtStr.Valid {
+			rt, _ := time.Parse(time.RFC3339Nano, rAtStr.String)
+			e.ReplayedAt = &rt
+		}
+		entries = append(entries, e)
+	}
+
+	return entries, total, nil
+}
+
+// ListSources returns an aggregated inventory of active data sources.
+func (s *RawStore) ListSources(ctx context.Context) ([]map[string]any, error) {
+	query := `
+	SELECT 
+		source_category,
+		source_id,
+		COUNT(*) as event_count,
+		MAX(received_time) as last_seen
+	FROM normalized_events
+	GROUP BY source_category, source_id
+	ORDER BY event_count DESC;
+	`
+	rows, err := s.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sources []map[string]any
+	for rows.Next() {
+		var (
+			category string
+			sourceID string
+			count    int64
+			lastSeen string
+		)
+		if err := rows.Scan(&category, &sourceID, &count, &lastSeen); err != nil {
+			return nil, err
+		}
+		sources = append(sources, map[string]any{
+			"category":   category,
+			"source_id":  sourceID,
+			"events":     count,
+			"last_seen":  lastSeen,
+		})
+	}
+	return sources, nil
 }
 
 // Close closes the underlying SQLite database handle.

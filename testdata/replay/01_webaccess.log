@@ -1,0 +1,1 @@
+192.168.1.100 - frank [19/Sep/2026:10:00:01 +0000] "GET /index.html HTTP/1.1" 200 4523 "https://google.com" "Mozilla/5.0"

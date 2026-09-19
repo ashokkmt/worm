@@ -1,0 +1,2 @@
+{"service": "order-service", "timestamp": "2026-09-19T10:15:00Z", "action": "OrderPlaced", "order_id": "ORD-98214", "user_id": "usr_alpha_99", "amount": 149.99, "currency": "USD", "client_ip": "198.51.100.45", "message": "Order ORD-98214 placed successfully"}
+{"service": "order-service", "timestamp": "2026-09-19T10:16:12Z", "action": "OrderCancelled", "order_id": "ORD-98215", "user_id": "usr_beta_88", "amount": 49.50, "currency": "USD", "client_ip": "198.51.100.46", "message": "Order ORD-98215 cancelled by customer"}

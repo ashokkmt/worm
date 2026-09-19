@@ -1,0 +1,1 @@
+{"service": "payment-gateway", "timestamp": "2026-09-19T10:00:02Z", "level": "info", "user_id": "u-101", "action": "charge", "status": "success", "message": "Payment processed successfully", "client_ip": "198.51.100.22", "response_time_ms": 42}
