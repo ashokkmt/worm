@@ -1,0 +1,1 @@
+<14>1 2026-09-19T10:00:06Z pa-fw-01 paloalto - TRAFFIC - vendor_product=PAN-OS action=allow src=10.0.1.50 sport=514 dst=10.0.2.50 dport=443 proto=tcp rule=web-access app=ssl session_id=12345 bytes_sent=1500 bytes_recv=3000

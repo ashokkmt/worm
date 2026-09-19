@@ -1,0 +1,2 @@
+timestamp,client_ip,server_ip,port,user_id,action,statement,source_type
+2026-09-19T10:00:03Z,10.0.0.5,10.0.0.2,5432,postgres,SELECT,"SELECT * FROM users WHERE active = true;",postgres_audit

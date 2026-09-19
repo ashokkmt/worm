@@ -1,0 +1,1 @@
+{"source": "edge-waf", "timestamp": "2026-09-19T10:17:30Z", "rule_id": "WAF-BLOCK-101", "client_ip": "203.0.113.88", "host": "api.example.com", "uri": "/admin/config", "action": "block", "severity": 4, "message": "SQL injection attempt blocked by Edge WAF"}

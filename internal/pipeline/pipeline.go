@@ -95,7 +95,7 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Pipeline{
+	p := &Pipeline{
 		cfg:         cfg,
 		store:       store,
 		sink:        sink,
@@ -107,6 +107,21 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 		ctx:         ctx,
 		cancel:      cancel,
 	}
+
+	if store != nil {
+		if rawCount, err := store.CountRaw(ctx); err == nil {
+			p.accepted.Store(rawCount)
+		}
+		if normCount, err := store.CountNormalized(ctx); err == nil {
+			p.normalized.Store(normCount)
+			p.delivered.Store(normCount)
+		}
+		if quarCount, err := store.CountQuarantine(ctx); err == nil {
+			p.quarantined.Store(quarCount)
+		}
+	}
+
+	return p
 }
 
 // SetPackManager attaches or updates the active parser pack manager.
@@ -412,6 +427,10 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			continue
 		}
 
+		if p.store != nil {
+			_ = p.store.StoreNormalized(ctx, normalized)
+		}
+
 		p.normalized.Add(1)
 		p.delivered.Add(1)
 		p.pending.Add(-1)
@@ -473,9 +492,17 @@ func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEve
 		return nil, fmt.Errorf("replay validation failed: %w", err)
 	}
 
-	// Mark replayed in store
-	_ = p.store.MarkReplayed(ctx, qID)
-	_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusNormalized)
+	// Update pipeline loss accounting counters
+	p.quarantined.Add(-1)
+	p.normalized.Add(1)
+	p.delivered.Add(1)
+
+	// Remove from quarantine table and persist normalized projection
+	if p.store != nil {
+		_ = p.store.DeleteQuarantine(ctx, qID)
+		_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusNormalized)
+		_ = p.store.StoreNormalized(ctx, norm)
+	}
 
 	_ = p.sink.Emit(ctx, norm)
 	return norm, nil

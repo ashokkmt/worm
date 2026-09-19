@@ -1,0 +1,50 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: edge-waf
+  version: 1.0.0
+  description: Edge Web Application Firewall Threat Inspection JSON logs
+  author: WORM Team
+spec:
+  sourceCategory: network_device
+  format: json
+  match:
+    fieldEquals:
+      source: "edge-waf"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z07:00"
+    rule_id:
+      from: rule_id
+      type: string
+    client_ip:
+      from: client_ip
+      type: ip
+      required: true
+    host:
+      from: host
+      type: string
+    uri:
+      from: uri
+      type: string
+    action:
+      from: action
+      type: string
+    severity:
+      from: severity
+      type: integer
+    message:
+      from: message
+      type: string
+  map:
+    timestamp: event.time
+    rule_id: event.finding_info.title
+    client_ip: event.src_endpoint.ip
+    host: event.dst_endpoint.hostname
+    uri: event.http_request.url.path
+    action: event.action
+    severity: event.severity_id
+    message: event.message
+  preserveUnmapped: true

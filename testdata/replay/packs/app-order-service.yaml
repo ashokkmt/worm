@@ -1,0 +1,50 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: app-order-service
+  version: 1.0.0
+  description: E-Commerce Microservice Order Lifecycle JSON logs
+  author: WORM Team
+spec:
+  sourceCategory: application
+  format: json
+  match:
+    fieldEquals:
+      service: "order-service"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z07:00"
+    action:
+      from: action
+      type: string
+    order_id:
+      from: order_id
+      type: string
+    user_id:
+      from: user_id
+      type: string
+    amount:
+      from: amount
+      type: float
+    currency:
+      from: currency
+      type: string
+    client_ip:
+      from: client_ip
+      type: ip
+      required: true
+    message:
+      from: message
+      type: string
+  map:
+    timestamp: event.time
+    action: event.activity_name
+    order_id: event.transaction.id
+    user_id: event.actor.user.uid
+    amount: event.transaction.amount
+    currency: event.transaction.currency
+    client_ip: event.src_endpoint.ip
+    message: event.message
+  preserveUnmapped: true
