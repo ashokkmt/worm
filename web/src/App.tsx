@@ -38,7 +38,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#0d1117] text-[#c9d1d9] flex flex-col font-sans max-w-full overflow-x-hidden">
       <Navbar
         currentTab={currentTab}
         onSelectTab={(tab) => handleNavigate(tab)}
@@ -46,7 +46,7 @@ export const App: React.FC = () => {
         invariantValid={statsError ? null : (stats?.loss_audit?.valid ?? null)}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 min-w-0">
         {currentTab === 'dashboard' && (
           <Dashboard onNavigate={handleNavigate} stats={stats} onRefreshStats={fetchStats} />
         )}
@@ -59,7 +59,8 @@ export const App: React.FC = () => {
 
       <footer className="bg-[#161b22] border-t border-[#30363d] py-3 text-center text-xs font-mono text-[#8b949e]">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>WORM // SIH 26156 &mdash; Universal Log Pre-processing Framework</span>
+          <span>WORM </span>
+          {/* <span>WORM // SIH 26156 &mdash; Universal Log Pre-processing Framework</span> */}
           <span className="text-emerald-400">Air-Gapped Operational Console &bull; Zero External Dependencies</span>
         </div>
       </footer>

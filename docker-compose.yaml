@@ -13,9 +13,7 @@ services:
       - "8080:8080/tcp"
       - "9090:9090/tcp"
     volumes:
-      - ./data/worm.db:/data/worm.db
-      - ./data/inbox:/data/inbox
-      - ./data/output:/data/output
+      - ./data:/data
       - ./packs:/worm/packs:ro
     environment:
       - WORM_LOG_LEVEL=info
@@ -124,7 +122,7 @@ services:
     ports:
       - "8085:8080/tcp"
     volumes:
-      - ./data:/data:ro
+      - ./data:/data
     restart: unless-stopped
     networks:
       - worm-net

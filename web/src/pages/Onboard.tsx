@@ -138,10 +138,10 @@ export const Onboard: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-[#161b22] border border-[#30363d] rounded-md p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-sm">
         <div>
-          <h1 className="text-sm font-mono font-bold text-[#f0f6fc] flex items-center">
-            <FileCode className="w-4 h-4 mr-2 text-[#58a6ff]" />
+          <h1 className="text-sm sm:text-base font-mono font-bold text-[#f0f6fc] flex items-center">
+            <FileCode className="w-4 h-4 mr-2 text-[#58a6ff] shrink-0" />
             Source Onboarding &amp; Parser Pack Studio
           </h1>
           <p className="text-xs font-mono text-[#8b949e] mt-1">
@@ -150,11 +150,11 @@ export const Onboard: React.FC = () => {
         </div>
 
         {/* Template Selector */}
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 shrink-0">
           <span className="text-xs font-mono text-[#8b949e]">Preset:</span>
           <select
             onChange={(e) => handleSelectTemplate(e.target.value)}
-            className="bg-[#0d1117] border border-[#30363d] rounded text-xs font-mono text-[#c9d1d9] px-2.5 py-1"
+            className="bg-[#0d1117] border border-[#30363d] rounded-md text-xs font-mono text-[#c9d1d9] px-3 py-1.5 focus:outline-none focus:border-[#58a6ff] transition-colors"
           >
             <option value="custom_firewall">Palo Alto Threat (CSV)</option>
             <option value="custom_json_app">K8s App Microservice (JSON)</option>
@@ -164,28 +164,27 @@ export const Onboard: React.FC = () => {
 
       {feedback && (
         <div
-          className={`p-3 rounded text-xs font-mono border flex items-center ${
-            feedback.type === 'success'
-              ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-              : 'bg-rose-950/60 border-rose-800 text-rose-300'
-          }`}
+          className={`p-3.5 rounded-md text-xs font-mono border flex items-center shadow-xs ${feedback.type === 'success'
+            ? 'bg-emerald-950/70 border-emerald-800/80 text-emerald-300'
+            : 'bg-rose-950/70 border-rose-800/80 text-rose-300'
+            }`}
         >
           {feedback.type === 'success' ? (
-            <CheckCircle2 className="w-4 h-4 mr-2 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 mr-2 shrink-0 text-emerald-400" />
           ) : (
-            <AlertTriangle className="w-4 h-4 mr-2 shrink-0" />
+            <AlertTriangle className="w-4 h-4 mr-2 shrink-0 text-rose-400" />
           )}
           {feedback.message}
         </div>
       )}
 
       {/* Editor & Test Runner Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-w-0">
+
         {/* Left Column: YAML Definition Editor */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-md p-4 flex flex-col space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#21262d]">
-            <span className="text-xs font-mono uppercase font-bold text-[#f0f6fc]">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-5 flex flex-col space-y-3 min-w-0 shadow-sm">
+          <div className="flex items-center justify-between pb-3 border-b border-[#21262d] gap-2 min-w-0">
+            <span className="text-xs font-mono uppercase font-bold text-[#f0f6fc] truncate">
               Declarative Parser Pack (YAML)
             </span>
             <Badge variant="blue">worm.io/v1</Badge>
@@ -194,24 +193,24 @@ export const Onboard: React.FC = () => {
           <textarea
             value={yamlContent}
             onChange={(e) => setYamlContent(e.target.value)}
-            className="w-full h-96 bg-[#0d1117] border border-[#30363d] rounded p-3 text-xs font-mono text-[#c9d1d9] focus:outline-none focus:border-[#58a6ff] leading-relaxed resize-none"
+            className="w-full h-96 bg-[#0d1117] border border-[#30363d] rounded-md p-3.5 text-xs font-mono text-[#c9d1d9] focus:outline-none focus:border-[#58a6ff] leading-relaxed resize-none min-w-0 max-w-full transition-colors"
             spellCheck={false}
           />
 
-          <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center justify-between pt-2 gap-2 flex-wrap sm:flex-nowrap">
             <button
               onClick={handleRollback}
-              className="px-3 py-1.5 rounded bg-[#21262d] hover:bg-[#30363d] text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d] flex items-center"
+              className="px-3.5 py-2 rounded-md bg-[#21262d] hover:bg-[#30363d] text-xs font-mono font-medium text-[#8b949e] hover:text-white border border-[#30363d] flex items-center shrink-0 transition-colors shadow-xs"
               title="Rollback to previous pack snapshot"
             >
-              <RotateCcw className="w-3.5 h-3.5 mr-1" />
+              <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
               Rollback Snapshot
             </button>
 
             <button
               onClick={handleActivate}
               disabled={activating}
-              className="px-4 py-1.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium flex items-center disabled:opacity-50 transition shadow-xs"
+              className="px-4 py-2 rounded-md bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium flex items-center disabled:opacity-50 transition-colors shadow-xs shrink-0"
             >
               <Upload className="w-3.5 h-3.5 mr-1.5" />
               {activating ? 'Activating...' : 'Activate Pack (Live)'}
@@ -220,38 +219,38 @@ export const Onboard: React.FC = () => {
         </div>
 
         {/* Right Column: Sample Log & Test Runner */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-md p-4 flex flex-col space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-[#21262d]">
-            <span className="text-xs font-mono uppercase font-bold text-[#f0f6fc]">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-5 flex flex-col space-y-3 min-w-0 shadow-sm">
+          <div className="flex items-center justify-between pb-3 border-b border-[#21262d] gap-2 min-w-0">
+            <span className="text-xs font-mono uppercase font-bold text-[#f0f6fc] truncate">
               Sample Raw Log Input
             </span>
-            <span className="text-xs font-mono text-[#8b949e]">Sandbox Runner</span>
+            <span className="text-xs font-mono text-[#8b949e] shrink-0 font-medium">Sandbox Runner</span>
           </div>
 
           <textarea
             value={sampleLog}
             onChange={(e) => setSampleLog(e.target.value)}
             placeholder="Paste raw log string here..."
-            className="w-full h-28 bg-[#0d1117] border border-[#30363d] rounded p-3 text-xs font-mono text-[#c9d1d9] focus:outline-none focus:border-[#58a6ff] leading-relaxed resize-none"
+            className="w-full h-28 bg-[#0d1117] border border-[#30363d] rounded-md p-3.5 text-xs font-mono text-[#c9d1d9] focus:outline-none focus:border-[#58a6ff] leading-relaxed resize-none min-w-0 max-w-full transition-colors"
             spellCheck={false}
           />
 
           <button
             onClick={handleValidate}
             disabled={validating}
-            className="w-full py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-mono font-medium rounded flex items-center justify-center disabled:opacity-50 transition"
+            className="w-full py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-mono font-medium rounded-md flex items-center justify-center disabled:opacity-50 transition-colors shadow-xs"
           >
-            <Play className="w-3.5 h-3.5 mr-1.5" />
-            {validating ? 'Running Validation...' : 'Validate Pack & Match Sample'}
+            <Play className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+            <span className="truncate">{validating ? 'Running Validation...' : 'Validate Pack & Match Sample'}</span>
           </button>
 
           {/* Validation & Extracted Fields Preview */}
-          <div className="flex-1 bg-[#0d1117] border border-[#21262d] rounded p-3 overflow-auto">
-            <div className="text-xs font-mono uppercase tracking-wider text-[#8b949e] mb-2">
+          <div className="flex-1 bg-[#0d1117] border border-[#21262d] rounded-md p-3.5 overflow-auto min-w-0 max-w-full">
+            <div className="text-[11px] font-mono uppercase font-semibold tracking-wider text-[#8b949e] mb-2">
               Sandbox Execution Output
             </div>
             {validationResult ? (
-              <div className="space-y-2 text-xs font-mono">
+              <div className="space-y-2.5 text-xs font-mono min-w-0">
                 <div className="flex items-center space-x-2">
                   <span className="text-[#8b949e]">Schema Valid:</span>
                   <Badge variant={validationResult.valid ? 'green' : 'red'}>
@@ -267,9 +266,9 @@ export const Onboard: React.FC = () => {
                       </Badge>
                     </div>
                     {validationResult.extracted_fields && (
-                      <div>
-                        <div className="text-[#8b949e] mt-2 mb-1">Extracted Source Fields:</div>
-                        <pre className="bg-[#161b22] border border-[#30363d] p-2 rounded text-emerald-400 overflow-x-auto">
+                      <div className="min-w-0">
+                        <div className="text-[#8b949e] mt-2 mb-1.5 font-medium">Extracted Source Fields:</div>
+                        <pre className="bg-[#161b22] border border-[#30363d] p-3 rounded-md text-emerald-400 overflow-x-auto w-full max-w-full min-w-0 leading-relaxed">
                           {JSON.stringify(validationResult.extracted_fields, null, 2)}
                         </pre>
                       </div>
@@ -277,7 +276,7 @@ export const Onboard: React.FC = () => {
                   </>
                 )}
                 {validationResult.error && (
-                  <div className="text-rose-400 mt-2">{validationResult.error}</div>
+                  <div className="text-rose-400 mt-2 break-all font-semibold">{validationResult.error}</div>
                 )}
               </div>
             ) : (
