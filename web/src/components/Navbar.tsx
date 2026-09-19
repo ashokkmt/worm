@@ -43,7 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="bg-[#161b22] border-b border-[#30363d] sticky top-0 z-50">
+    <header className="bg-[#161b22]/95 backdrop-blur-md border-b border-[#30363d] sticky top-0 z-40 shadow-xs">
       <div className="mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-14 gap-2">
 
@@ -51,14 +51,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           <div className="flex items-center space-x-3">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden p-1.5 rounded-md text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d] focus:outline-none transition-colors"
+              className="lg:hidden p-1.5 rounded-md text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d] focus:outline-none transition-colors border border-transparent hover:border-[#30363d]"
               aria-label="Toggle Navigation Menu"
             >
               {mobileMenuOpen ? <X className="w-5 h-5 text-[#58a6ff]" /> : <Menu className="w-5 h-5" />}
             </button>
 
-            <div className="flex items-center space-x-3 cursor-pointer" onClick={() => onSelectTab('dashboard')}>
-              <div className="bg-[#1f6feb] text-white px-2 py-0.5 rounded font-mono font-bold text-sm tracking-wider flex items-center">
+            <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => onSelectTab('dashboard')}>
+              <div className="bg-[#1f6feb] hover:bg-[#388bfd] text-white px-2.5 py-1 rounded-md font-mono font-bold text-sm tracking-wider flex items-center shadow-xs transition-colors">
                 WORM
               </div>
             </div>
@@ -72,9 +72,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <button
                   key={tab.id}
                   onClick={() => onSelectTab(tab.id)}
-                  className={`flex items-center px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-colors ${active
-                      ? 'bg-[#21262d] text-[#58a6ff] border border-[#388bfd]/40'
-                      : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d]/50 border border-transparent'
+                  className={`flex items-center px-3 py-1.5 rounded-md text-xs font-mono font-medium transition-all duration-150 ${active
+                    ? 'bg-[#21262d] text-[#58a6ff] border border-[#388bfd]/50 shadow-xs'
+                    : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d]/60 border border-transparent'
                     }`}
                 >
                   {tab.icon}
@@ -87,10 +87,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Operational Badges */}
           <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
             {/* Live EPS */}
-            <div className="flex items-center font-mono text-xs text-[#8b949e] bg-[#0d1117] px-2 py-1 rounded border border-[#30363d]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 mr-1.5 animate-pulse" />
+            <div className="flex items-center font-mono text-xs text-[#8b949e] bg-[#0d1117] px-2.5 py-1 rounded-full border border-[#30363d] shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 mr-1.5 animate-pulse shadow-xs" />
               <span className="font-semibold text-[#c9d1d9] mr-1">{eps.toFixed(1)}</span>
-              <span className="hidden sm:inline">EPS</span>
+              <span className="hidden sm:inline text-[#8b949e]">EPS</span>
             </div>
 
             {/* Invariant status */}
@@ -136,8 +136,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                   key={tab.id}
                   onClick={() => handleMobileTabClick(tab.id)}
                   className={`flex items-center w-full px-3 py-2 rounded-md text-xs font-mono font-medium transition-colors ${active
-                      ? 'bg-[#21262d] text-[#58a6ff] border border-[#388bfd]/40'
-                      : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d]/50 border border-transparent'
+                    ? 'bg-[#21262d] text-[#58a6ff] border border-[#388bfd]/50'
+                    : 'text-[#8b949e] hover:text-[#c9d1d9] hover:bg-[#21262d]/60 border border-transparent'
                     }`}
                 >
                   {tab.icon}

@@ -24,7 +24,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
   const fetchSources = async () => {
     try {
       const sourcesData = await apiService.listSources();
-      setSources(sourcesData.sources);
+      const sorted = [...(sourcesData.sources || [])].sort((a, b) => {
+        const timeA = a.last_seen ? new Date(a.last_seen).getTime() : 0;
+        const timeB = b.last_seen ? new Date(b.last_seen).getTime() : 0;
+        return timeB - timeA;
+      });
+      setSources(sorted.slice(0, 10));
       setLastRefreshed(new Date());
     } catch (e) {
       console.error('Failed to load sources telemetry', e);
@@ -48,11 +53,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
 
   useEffect(() => {
     fetchSources();
-    // If stats are not provided from App, fetch them here
     if (propStats === undefined) {
       apiService.getStats().then(setInternalStats).catch(() => { });
     }
-    const interval = setInterval(fetchSources, 5000);
+    const interval = setInterval(() => {
+      fetchSources();
+      if (propStats === undefined) {
+        apiService.getStats().then(setInternalStats).catch(() => { });
+      }
+    }, 5000);
     return () => clearInterval(interval);
   }, [propStats]);
 
@@ -75,25 +84,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-[#21262d]">
         <div>
-          <h1 className="text-xl font-mono font-bold text-[#f0f6fc] tracking-tight">
-            System Telemetry & Loss Ledger
+          <h1 className="text-xl font-mono font-bold text-[#f0f6fc] tracking-tight flex items-center">
+            System Telemetry &amp; Loss Ledger
           </h1>
           <p className="text-xs font-mono text-[#8b949e] mt-1">
             Real-time pipeline accounting, cryptographic verification, and air-gapped stream metrics.
           </p>
         </div>
-        <div className="flex items-center space-x-3">
-          <span className="text-xs font-mono text-[#8b949e]">
-            Updated: {lastRefreshed.toLocaleTimeString()}
+        <div className="flex items-center space-x-3 shrink-0">
+          <span className="text-xs font-mono text-[#8b949e] bg-[#161b22] px-2.5 py-1 rounded-md border border-[#30363d]">
+            Updated: <span className="text-[#c9d1d9] font-medium">{lastRefreshed.toLocaleTimeString()}</span>
           </span>
           <button
             onClick={handleRefresh}
-            className="p-1.5 rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
+            className="p-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d] transition-colors"
             title="Refresh now"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#58a6ff]' : ''}`} />
           </button>
         </div>
       </div>
@@ -144,7 +153,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
 
         {/* Active Sources Table */}
-        <div className="lg:col-span-2 bg-[#161b22] border border-[#30363d] rounded-md p-4 min-w-0">
+        <div className="lg:col-span-2 bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-5 min-w-0 shadow-sm">
           <div className="flex items-center justify-between pb-3 border-b border-[#21262d] gap-2 min-w-0">
             <div className="flex items-center space-x-2 min-w-0">
               <Server className="w-4 h-4 text-[#58a6ff] shrink-0" />
@@ -153,40 +162,40 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
               </h2>
             </div>
             <span className="text-xs font-mono text-[#8b949e] shrink-0">
-              {sources.length} active source feeds
+              {sources.length > 0 ? `Top ${sources.length} latest source feeds` : '0 active source feeds'}
             </span>
           </div>
 
           <div className="overflow-x-auto mt-3 max-w-full">
             <table className="w-full text-left text-xs font-mono">
               <thead>
-                <tr className="text-[#8b949e] border-b border-[#21262d]">
-                  <th className="py-2 px-2 font-medium whitespace-nowrap">Category</th>
-                  <th className="py-2 px-2 font-medium whitespace-nowrap">Source ID / IP</th>
-                  <th className="py-2 px-2 font-medium text-right whitespace-nowrap">Event Count</th>
-                  <th className="py-2 px-2 font-medium text-right whitespace-nowrap">Last Seen</th>
+                <tr className="text-[#8b949e] border-b border-[#21262d] bg-[#0d1117]">
+                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Category</th>
+                  <th className="py-2.5 px-3 font-medium whitespace-nowrap">Source ID / IP</th>
+                  <th className="py-2.5 px-3 font-medium text-right whitespace-nowrap">Event Count</th>
+                  <th className="py-2.5 px-3 font-medium text-right whitespace-nowrap">Last Seen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#21262d]">
                 {sources.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-[#8b949e]">
+                    <td colSpan={4} className="py-8 text-center text-[#8b949e]">
                       No events ingested yet. Waiting for stream input on UDP/TCP/HTTP.
                     </td>
                   </tr>
                 ) : (
                   sources.map((src, idx) => (
-                    <tr key={idx} className="hover:bg-[#21262d]/50 transition-colors">
-                      <td className="py-2 px-2 whitespace-nowrap">
+                    <tr key={idx} className="hover:bg-[#21262d]/60 transition-colors">
+                      <td className="py-2.5 px-3 whitespace-nowrap">
                         <Badge variant="blue">{src.category}</Badge>
                       </td>
-                      <td className="py-2 px-2 font-semibold text-[#f0f6fc] whitespace-nowrap">
+                      <td className="py-2.5 px-3 font-semibold text-[#f0f6fc] whitespace-nowrap">
                         {src.source_id}
                       </td>
-                      <td className="py-2 px-2 text-right text-emerald-400 font-semibold whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-right text-emerald-400 font-semibold whitespace-nowrap">
                         {src.events.toLocaleString()}
                       </td>
-                      <td className="py-2 px-2 text-right text-[#8b949e] whitespace-nowrap">
+                      <td className="py-2.5 px-3 text-right text-[#8b949e] whitespace-nowrap">
                         {src.last_seen ? new Date(src.last_seen).toLocaleTimeString() : 'N/A'}
                       </td>
                     </tr>
@@ -198,39 +207,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
         </div>
 
         {/* Quick Operations & Air-Gap Checklist */}
-        <div className="bg-[#161b22] border border-[#30363d] rounded-md p-4 flex flex-col justify-between space-y-4">
+        <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-5 flex flex-col justify-between space-y-4 shadow-sm">
           <div>
             <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#f0f6fc] pb-3 border-b border-[#21262d]">
               Operational Quick Actions
             </h2>
-            <div className="mt-3 space-y-2">
+            <div className="mt-4 space-y-2.5">
               <button
                 onClick={() => onNavigate('events')}
-                className="w-full flex items-center justify-between p-2.5 rounded bg-[#21262d] hover:bg-[#30363d] text-xs font-mono text-[#c9d1d9] transition"
+                className="w-full flex items-center justify-between p-3 rounded-md bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#30363d] text-xs font-mono text-[#c9d1d9] transition-all duration-150 group"
               >
                 <span>Browse Normalized Events</span>
-                <ArrowRight className="w-3.5 h-3.5 text-[#58a6ff]" />
+                <ArrowRight className="w-3.5 h-3.5 text-[#58a6ff] group-hover:translate-x-0.5 transition-transform" />
               </button>
               <button
                 onClick={() => onNavigate('quarantine')}
-                className="w-full flex items-center justify-between p-2.5 rounded bg-[#21262d] hover:bg-[#30363d] text-xs font-mono text-[#c9d1d9] transition"
+                className="w-full flex items-center justify-between p-3 rounded-md bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#30363d] text-xs font-mono text-[#c9d1d9] transition-all duration-150 group"
               >
                 <span>Inspect Quarantine Dead-Letter Queue</span>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-amber-400 group-hover:translate-x-0.5 transition-transform" />
               </button>
               <button
                 onClick={() => onNavigate('onboard')}
-                className="w-full flex items-center justify-between p-2.5 rounded bg-[#21262d] hover:bg-[#30363d] text-xs font-mono text-[#c9d1d9] transition"
+                className="w-full flex items-center justify-between p-3 rounded-md bg-[#0d1117] hover:bg-[#21262d] border border-[#21262d] hover:border-[#30363d] text-xs font-mono text-[#c9d1d9] transition-all duration-150 group"
               >
                 <span>Onboard New Source / Test Parser</span>
-                <ArrowRight className="w-3.5 h-3.5 text-emerald-400" />
+                <ArrowRight className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
               </button>
             </div>
           </div>
 
-          <div className="bg-[#0d1117] border border-[#30363d] rounded p-3 text-xs font-mono">
-            <div className="text-[#8b949e] font-semibold mb-1">Security & Air-Gap Profile</div>
-            <div className="text-[11px] text-emerald-400 space-y-1">
+          <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-3.5 text-xs font-mono">
+            <div className="text-[#8b949e] font-semibold mb-2 text-[11px] uppercase tracking-wider">Security &amp; Air-Gap Profile</div>
+            <div className="text-[11px] text-emerald-400 space-y-1.5 font-medium">
               <div>✓ Zero External CDN Requests</div>
               <div>✓ Self-Contained Go Binary (go:embed)</div>
               <div>✓ SQLite WAL Commit Durability</div>

@@ -95,22 +95,22 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
   };
 
   return (
-    <div className="bg-[#161b22] border border-[#30363d] rounded-md p-4 sm:p-5 space-y-6 w-full max-w-full min-w-0 box-border overflow-hidden">
+    <div className="bg-[#161b22] border border-[#30363d] rounded-lg p-4 sm:p-6 space-y-6 w-full max-w-full min-w-0 box-border overflow-hidden shadow-2xl">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-[#21262d] gap-2 min-w-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 border-b border-[#21262d] gap-2 min-w-0">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-mono font-bold text-[#f0f6fc] flex items-center min-w-0">
             <Hash className="w-4 h-4 mr-1.5 text-[#58a6ff] shrink-0" />
             <span className="truncate">Forensic Lineage &amp; Verification Trace</span>
           </h3>
-          <p className="text-xs font-mono text-[#8b949e] mt-0.5 break-all sm:truncate">
-            Event: {trace.event_id} | Raw ID: {trace.raw_id}
+          <p className="text-xs font-mono text-[#8b949e] mt-1 break-all sm:truncate">
+            Event: <span className="text-[#58a6ff]">{trace.event_id}</span> | Raw ID: <span className="text-[#c9d1d9]">{trace.raw_id}</span>
           </p>
         </div>
         {onClose && (
           <button
             onClick={onClose}
-            className="text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] px-2.5 py-1 rounded bg-[#21262d] shrink-0 self-start sm:self-auto border border-[#30363d]"
+            className="text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] px-3 py-1.5 rounded-md bg-[#21262d] hover:bg-[#30363d] shrink-0 self-start sm:self-auto border border-[#30363d] transition-colors"
           >
             Close
           </button>
@@ -119,20 +119,20 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
 
       {/* Stage Timeline Stepper */}
       <div className="min-w-0">
-        <div className="text-xs font-mono uppercase tracking-wider text-[#8b949e] mb-3">
+        <div className="text-[11px] font-mono uppercase font-semibold tracking-wider text-[#8b949e] mb-3">
           Pipeline Transformation Lifecycle
         </div>
         <div className="flex flex-wrap items-center gap-2 min-w-0">
           {trace.processing_history?.map((step, idx) => (
             <React.Fragment key={idx}>
-              <div className="flex items-center space-x-1.5 bg-[#0d1117] border border-[#30363d] px-3 py-1.5 rounded-md text-xs font-mono shrink-0 max-w-full">
+              <div className="flex items-center space-x-1.5 bg-[#0d1117] border border-[#30363d] px-3 py-1.5 rounded-full text-xs font-mono shrink-0 max-w-full shadow-xs">
                 {step.result === 'failed' ? (
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                 ) : (
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 )}
                 <span className="font-semibold text-[#f0f6fc] truncate">{step.stage}</span>
-                <span className="text-[#8b949e] shrink-0">({step.result})</span>
+                <span className="text-[#8b949e] shrink-0 text-[11px]">({step.result})</span>
               </div>
               {idx < trace.processing_history.length - 1 && (
                 <ChevronRight className="w-3.5 h-3.5 text-[#484f58] shrink-0" />
@@ -146,23 +146,23 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-w-0">
 
         {/* 1. Normalized Event Integrity */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-4 flex flex-col justify-between space-y-3 min-w-0">
+        <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between space-y-3 min-w-0 shadow-xs">
           <div className="min-w-0">
-            <div className="flex items-center justify-between pb-1 border-b border-[#21262d] gap-2 min-w-0">
+            <div className="flex items-center justify-between pb-2 border-b border-[#21262d] gap-2 min-w-0">
               <span className="text-xs font-mono uppercase font-bold text-[#58a6ff] truncate">
                 Normalized Event Integrity
               </span>
               <Badge variant="blue">-verify-event</Badge>
             </div>
-            <div className="text-[11px] font-mono text-[#8b949e] mt-1.5 truncate" title={trace.event_id}>
-              ID: {trace.event_id}
+            <div className="text-[11px] font-mono text-[#8b949e] mt-2 truncate" title={trace.event_id}>
+              ID: <span className="text-[#c9d1d9]">{trace.event_id}</span>
             </div>
           </div>
 
           <button
             onClick={handleVerifyEvent}
             disabled={verifyingEvent}
-            className="w-full py-1.5 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-mono font-medium rounded transition flex items-center justify-center disabled:opacity-50"
+            className="w-full py-2 bg-[#1f6feb] hover:bg-[#388bfd] text-white text-xs font-mono font-medium rounded-md transition shadow-xs flex items-center justify-center disabled:opacity-50"
           >
             <ShieldCheck className="w-3.5 h-3.5 mr-1.5 shrink-0" />
             <span className="truncate">{verifyingEvent ? 'Verifying Event...' : 'Verify Normalized Event'}</span>
@@ -170,9 +170,9 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
 
           {eventVerifyResult && (
             <div
-              className={`p-2.5 rounded border text-xs font-mono break-words ${eventVerifyResult.passed
-                  ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-                  : 'bg-rose-950/60 border-rose-800 text-rose-300'
+              className={`p-3 rounded-md border text-xs font-mono break-words ${eventVerifyResult.passed
+                ? 'bg-emerald-950/70 border-emerald-800/80 text-emerald-300'
+                : 'bg-rose-950/70 border-rose-800/80 text-rose-300'
                 }`}
             >
               <div className="font-bold break-words">
@@ -185,15 +185,15 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
         </div>
 
         {/* 2. Raw Wire Bytes Integrity */}
-        <div className="bg-[#0d1117] border border-[#30363d] rounded-md p-4 flex flex-col justify-between space-y-3 min-w-0">
+        <div className="bg-[#0d1117] border border-[#30363d] rounded-lg p-4 flex flex-col justify-between space-y-3 min-w-0 shadow-xs">
           <div className="min-w-0">
-            <div className="flex items-center justify-between pb-1 border-b border-[#21262d] gap-2 min-w-0">
+            <div className="flex items-center justify-between pb-2 border-b border-[#21262d] gap-2 min-w-0">
               <span className="text-xs font-mono uppercase font-bold text-emerald-400 truncate">
                 Raw Wire Stream Integrity
               </span>
               <Badge variant="green">-verify</Badge>
             </div>
-            <div className="text-[11px] font-mono text-emerald-400 mt-1.5 truncate font-semibold" title={trace.raw_sha256}>
+            <div className="text-[11px] font-mono text-emerald-400 mt-2 truncate font-semibold" title={trace.raw_sha256}>
               SHA: {trace.raw_sha256}
             </div>
           </div>
@@ -201,7 +201,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
           <button
             onClick={handleVerifyRaw}
             disabled={verifyingRaw}
-            className="w-full py-1.5 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium rounded transition flex items-center justify-center disabled:opacity-50"
+            className="w-full py-2 bg-[#238636] hover:bg-[#2ea043] text-white text-xs font-mono font-medium rounded-md transition shadow-xs flex items-center justify-center disabled:opacity-50"
           >
             <ShieldCheck className="w-3.5 h-3.5 mr-1.5 shrink-0" />
             <span className="truncate">{verifyingRaw ? 'Verifying Raw...' : 'Verify Raw Wire Bytes'}</span>
@@ -209,9 +209,9 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
 
           {rawVerifyResult && (
             <div
-              className={`p-2.5 rounded border text-xs font-mono break-words ${rawVerifyResult.matches
-                  ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
-                  : 'bg-rose-950/60 border-rose-800 text-rose-300'
+              className={`p-3 rounded-md border text-xs font-mono break-words ${rawVerifyResult.matches
+                ? 'bg-emerald-950/70 border-emerald-800/80 text-emerald-300'
+                : 'bg-rose-950/70 border-rose-800/80 text-rose-300'
                 }`}
             >
               <div className="font-bold break-words">
@@ -219,7 +219,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
                   ? '✓ PASSED: Verbatim wire bytes match stored SHA-256.'
                   : '✗ TAMPER DETECTED: Raw payload was altered in database!'}
               </div>
-              <div className="text-[10px] opacity-80 mt-0.5 truncate" title={rawVerifyResult.computed_sha256}>
+              <div className="text-[10px] opacity-80 mt-1 truncate" title={rawVerifyResult.computed_sha256}>
                 Computed: {rawVerifyResult.computed_sha256}
               </div>
             </div>
@@ -231,13 +231,13 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
       {/* Raw Payload Inspector (Text / Hex) */}
       <div className="min-w-0">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2 min-w-0">
-          <div className="text-xs font-mono uppercase tracking-wider text-[#8b949e] truncate">
+          <div className="text-[11px] font-mono uppercase font-semibold tracking-wider text-[#8b949e] truncate">
             Raw Byte Ingestion Stream ({trace.byte_count} bytes from {trace.transport}://{trace.source_ip})
           </div>
-          <div className="flex space-x-1 bg-[#0d1117] p-0.5 rounded border border-[#30363d] shrink-0 self-start sm:self-auto">
+          <div className="flex space-x-1 bg-[#0d1117] p-1 rounded-md border border-[#30363d] shrink-0 self-start sm:self-auto">
             <button
               onClick={() => setViewMode('text')}
-              className={`px-2 py-0.5 text-xs font-mono rounded ${viewMode === 'text' ? 'bg-[#21262d] text-[#58a6ff]' : 'text-[#8b949e]'
+              className={`px-2.5 py-0.5 text-xs font-mono rounded-sm transition-colors ${viewMode === 'text' ? 'bg-[#21262d] text-[#58a6ff] font-medium' : 'text-[#8b949e] hover:text-[#c9d1d9]'
                 }`}
             >
               <FileText className="w-3 h-3 inline mr-1" />
@@ -245,7 +245,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
             </button>
             <button
               onClick={() => setViewMode('hex')}
-              className={`px-2 py-0.5 text-xs font-mono rounded ${viewMode === 'hex' ? 'bg-[#21262d] text-[#58a6ff]' : 'text-[#8b949e]'
+              className={`px-2.5 py-0.5 text-xs font-mono rounded-sm transition-colors ${viewMode === 'hex' ? 'bg-[#21262d] text-[#58a6ff] font-medium' : 'text-[#8b949e] hover:text-[#c9d1d9]'
                 }`}
             >
               <Hash className="w-3 h-3 inline mr-1" />
@@ -254,7 +254,7 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
           </div>
         </div>
 
-        <pre className="bg-[#0d1117] border border-[#21262d] p-3 rounded-md text-xs font-mono text-[#c9d1d9] overflow-x-auto max-h-60 leading-relaxed w-full max-w-full min-w-0">
+        <pre className="bg-[#0d1117] border border-[#21262d] p-3.5 rounded-md text-xs font-mono text-[#c9d1d9] overflow-x-auto max-h-60 leading-relaxed w-full max-w-full min-w-0">
           {viewMode === 'text' ? trace.raw_payload : renderHexDump(trace.raw_hex)}
         </pre>
       </div>
@@ -263,14 +263,14 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
       {trace.unmapped && Object.keys(trace.unmapped).length > 0 && (
         <div className="min-w-0">
           <div className="flex items-center space-x-2 mb-2 min-w-0">
-            <div className="text-xs font-mono uppercase tracking-wider text-amber-400 truncate">
+            <div className="text-[11px] font-mono uppercase font-semibold tracking-wider text-amber-400 truncate">
               Preserved Unmapped Fields (Lossless Storage)
             </div>
             <Badge variant="amber">
               {Object.keys(trace.unmapped).length} fields
             </Badge>
           </div>
-          <pre className="bg-[#0d1117] border border-amber-900/50 p-3 rounded-md text-xs font-mono text-amber-200/90 overflow-x-auto max-h-48 w-full max-w-full min-w-0">
+          <pre className="bg-[#0d1117] border border-amber-900/50 p-3.5 rounded-md text-xs font-mono text-amber-200/90 overflow-x-auto max-h-48 w-full max-w-full min-w-0">
             {JSON.stringify(trace.unmapped, null, 2)}
           </pre>
         </div>
@@ -278,10 +278,10 @@ export const TraceViewer: React.FC<TraceViewerProps> = ({ trace, onClose }) => {
 
       {/* Normalized OCSF Document Preview */}
       <div className="min-w-0">
-        <div className="text-xs font-mono uppercase tracking-wider text-[#8b949e] mb-2">
+        <div className="text-[11px] font-mono uppercase font-semibold tracking-wider text-[#8b949e] mb-2">
           Normalized OCSF Document
         </div>
-        <pre className="bg-[#0d1117] border border-[#21262d] p-3 rounded-md text-xs font-mono text-[#c9d1d9] overflow-x-auto max-h-64 w-full max-w-full min-w-0">
+        <pre className="bg-[#0d1117] border border-[#21262d] p-3.5 rounded-md text-xs font-mono text-[#c9d1d9] overflow-x-auto max-h-64 w-full max-w-full min-w-0">
           {JSON.stringify(trace.ocsf, null, 2)}
         </pre>
       </div>
