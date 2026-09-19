@@ -493,7 +493,9 @@ func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEve
 	}
 
 	// Update pipeline loss accounting counters
-	p.quarantined.Add(-1)
+	if p.quarantined.Load() > 0 {
+		p.quarantined.Add(-1)
+	}
 	p.normalized.Add(1)
 	p.delivered.Add(1)
 

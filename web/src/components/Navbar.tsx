@@ -15,14 +15,14 @@ interface NavbarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
   eps?: number;
-  invariantValid?: boolean;
+  invariantValid?: boolean | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentTab,
   onSelectTab,
   eps = 0,
-  invariantValid = true,
+  invariantValid = null,
 }) => {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: <Activity className="w-4 h-4 mr-1.5" /> },
@@ -80,15 +80,22 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Invariant status */}
             <div className="hidden sm:block">
-              {invariantValid ? (
+              {invariantValid === true && (
                 <Badge variant="green">
                   <ShieldCheck className="w-3 h-3 mr-1" />
                   0-LOSS VALID
                 </Badge>
-              ) : (
+              )}
+              {invariantValid === false && (
                 <Badge variant="red">
                   <AlertTriangle className="w-3 h-3 mr-1" />
                   INVARIANT BREACH
+                </Badge>
+              )}
+              {invariantValid == null && (
+                <Badge variant="amber">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  TELEMETRY OFFLINE
                 </Badge>
               )}
             </div>

@@ -9,35 +9,52 @@ import { apiService } from '../services/api';
 
 interface DashboardProps {
   onNavigate: (tab: string, param?: string) => void;
+  stats?: SystemStats | null;
+  onRefreshStats?: () => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const [stats, setStats] = useState<SystemStats | null>(null);
+export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propStats, onRefreshStats }) => {
+  const [internalStats, setInternalStats] = useState<SystemStats | null>(null);
   const [sources, setSources] = useState<SourceSummary[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
 
-  const fetchTelemetry = async () => {
+  const stats = propStats !== undefined ? propStats : internalStats;
+
+  const fetchSources = async () => {
     try {
-      const [statsData, sourcesData] = await Promise.all([
-        apiService.getStats(),
-        apiService.listSources(),
-      ]);
-      setStats(statsData);
+      const sourcesData = await apiService.listSources();
       setSources(sourcesData.sources);
       setLastRefreshed(new Date());
     } catch (e) {
-      console.error('Failed to load telemetry', e);
+      console.error('Failed to load sources telemetry', e);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setLoading(true);
+    try {
+      if (onRefreshStats) {
+        onRefreshStats();
+      } else {
+        const statsData = await apiService.getStats();
+        setInternalStats(statsData);
+      }
+      await fetchSources();
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchTelemetry();
-    const interval = setInterval(fetchTelemetry, 2000);
+    fetchSources();
+    // If stats are not provided from App, fetch them here
+    if (propStats === undefined) {
+      apiService.getStats().then(setInternalStats).catch(() => {});
+    }
+    const interval = setInterval(fetchSources, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [propStats]);
 
   const formatUptime = (seconds: number) => {
     const d = Math.floor(seconds / 86400);
@@ -72,7 +89,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             Updated: {lastRefreshed.toLocaleTimeString()}
           </span>
           <button
-            onClick={fetchTelemetry}
+            onClick={handleRefresh}
             className="p-1.5 rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
             title="Refresh now"
           >

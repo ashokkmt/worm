@@ -151,11 +151,6 @@ func main() {
 		return
 	}
 
-	// Record PID if running as daemon child
-	if os.Getenv("WORM_DAEMON") == "1" {
-		_ = os.WriteFile(defaultPIDFile, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0644)
-	}
-
 	// Ensure directory exists for database
 	if dir := filepath.Dir(*dbPath); dir != "." && dir != "" {
 		_ = os.MkdirAll(dir, 0755)

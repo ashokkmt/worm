@@ -162,9 +162,10 @@ export const Quarantine: React.FC = () => {
                         Detail
                       </button>
                       <button
-                        disabled={replayingId === item.quarantine_id}
+                        disabled={replayingId === item.quarantine_id || !item.replay_eligible || !!item.replayed_at}
                         onClick={() => handleReplay(item.quarantine_id)}
                         className="px-2.5 py-0.5 rounded bg-[#238636] hover:bg-[#2ea043] text-white inline-flex items-center text-[11px] font-medium disabled:opacity-50 transition"
+                        title={!item.replay_eligible ? 'Not eligible for replay' : 'Replay event'}
                       >
                         <Play className="w-3 h-3 mr-1" />
                         {replayingId === item.quarantine_id ? 'Replaying...' : 'Replay'}
@@ -217,14 +218,20 @@ export const Quarantine: React.FC = () => {
 
       {/* Detail Modal */}
       {selectedPreview && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quarantine-detail-title"
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50"
+        >
           <div className="bg-[#161b22] border border-[#30363d] rounded-md max-w-2xl w-full p-5 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-[#21262d]">
-              <h3 className="text-sm font-mono font-bold text-rose-400">
+              <h3 id="quarantine-detail-title" className="text-sm font-mono font-bold text-rose-400">
                 Quarantine Detail: {selectedPreview.quarantine_id}
               </h3>
               <button
                 onClick={() => setSelectedPreview(null)}
+                aria-label="Close quarantine details"
                 className="text-xs font-mono text-[#8b949e] hover:text-[#c9d1d9] bg-[#21262d] px-2 py-1 rounded"
               >
                 Close

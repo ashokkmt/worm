@@ -13,13 +13,15 @@ export const App: React.FC = () => {
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
   const [navParam, setNavParam] = useState<string | undefined>();
   const [stats, setStats] = useState<SystemStats | null>(null);
+  const [statsError, setStatsError] = useState<boolean>(false);
 
   const fetchStats = async () => {
     try {
       const data = await apiService.getStats();
       setStats(data);
+      setStatsError(false);
     } catch {
-      // ignore
+      setStatsError(true);
     }
   };
 
@@ -41,11 +43,13 @@ export const App: React.FC = () => {
         currentTab={currentTab}
         onSelectTab={(tab) => handleNavigate(tab)}
         eps={stats?.eps || 0}
-        invariantValid={stats?.loss_audit?.valid ?? true}
+        invariantValid={statsError ? null : (stats?.loss_audit?.valid ?? null)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {currentTab === 'dashboard' && <Dashboard onNavigate={handleNavigate} />}
+        {currentTab === 'dashboard' && (
+          <Dashboard onNavigate={handleNavigate} stats={stats} onRefreshStats={fetchStats} />
+        )}
         {currentTab === 'events' && <Events initialEventId={navParam} />}
         {currentTab === 'quarantine' && <Quarantine />}
         {currentTab === 'onboard' && <Onboard />}

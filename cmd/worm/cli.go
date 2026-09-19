@@ -277,6 +277,12 @@ func listPacksCLI(uiAddr, packsDir string) {
 }
 
 func viewPackCLI(packName, uiAddr, packsDir string) {
+	packName = filepath.Base(packName)
+	if strings.ContainsAny(packName, "/\\") || strings.Contains(packName, "..") {
+		fmt.Fprintf(os.Stderr, "ERROR: Invalid pack name %q\n", packName)
+		os.Exit(1)
+	}
+
 	baseURL := getBaseURL(uiAddr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/v1/packs/" + packName)
@@ -290,9 +296,10 @@ func viewPackCLI(packName, uiAddr, packsDir string) {
 	}
 
 	// Fallback to disk
-	filePath := filepath.Join(packsDir, packName+".yaml")
+	cleanPacksDir := filepath.Clean(packsDir)
+	filePath := filepath.Join(cleanPacksDir, packName+".yaml")
 	if _, err := os.Stat(filePath); err != nil {
-		filePath = filepath.Join(packsDir, packName)
+		filePath = filepath.Join(cleanPacksDir, packName)
 	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -319,7 +326,19 @@ func applyPackCLI(packFilePath, uiAddr, packsDir string) {
 	}
 
 	// 1. Copy permanently to packsDir
-	destPath := filepath.Join(packsDir, pack.Metadata.Name+".yaml")
+	safeName := filepath.Base(pack.Metadata.Name)
+	if strings.ContainsAny(safeName, "/\\") || strings.Contains(safeName, "..") || safeName == "." {
+		fmt.Fprintf(os.Stderr, "ERROR: Pack name %q contains invalid characters\n", pack.Metadata.Name)
+		os.Exit(1)
+	}
+	cleanPacksDir := filepath.Clean(packsDir)
+	destPath := filepath.Join(cleanPacksDir, safeName+".yaml")
+	rel, err := filepath.Rel(cleanPacksDir, destPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		fmt.Fprintf(os.Stderr, "ERROR: Invalid destination path for pack\n")
+		os.Exit(1)
+	}
+
 	if err := os.WriteFile(destPath, data, 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to save pack to %s: %v\n", destPath, err)
 		os.Exit(1)

@@ -20,20 +20,21 @@ spec:
     contains: "THREAT"
   fields:
     src_ip:
-      from: field_7
+      from: src_ip
       type: ip
     dest_ip:
-      from: field_8
+      from: dest_ip
       type: ip
     rule_name:
-      from: field_11
+      from: rule_name
       type: string
   map:
     src_ip: src_endpoint.ip
     dest_ip: dst_endpoint.ip
   preserveUnmapped: true
 `,
-    sample: `1,2026/09/18 10:15:30,0012345678,THREAT,vulnerability,1,2026/09/18 10:15:30,192.168.10.50,10.0.0.1,0.0.0.0,0.0.0.0,allow-dns,trust,untrust,ethernet1/1,ethernet1/2,default-log,2026/09/18 10:15:30,12345,1,53,53,0,0,0x0,udp,alert,"",999999,any,informational,client-to-server,0,0x0,192.168.0.0-192.168.255.255,10.0.0.0-10.255.255.255,0,,0,,,0,,,,,,,,0,0,0,0,0`,
+    sample: `receive_time,serial_number,type,subtype,generate_time,src_ip,dest_ip,nat_src_ip,nat_dest_ip,rule_name,action
+2026/09/18 10:15:30,0012345678,THREAT,vulnerability,2026/09/18 10:15:30,192.168.10.50,10.0.0.1,0.0.0.0,0.0.0.0,allow-dns,alert`,
   },
   custom_json_app: {
     yaml: `apiVersion: worm.io/v1

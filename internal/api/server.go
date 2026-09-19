@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -445,6 +446,17 @@ func (s *Server) handleReplayQuarantine(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Verify replay eligibility
+	entry, err := s.store.GetQuarantineByID(r.Context(), qID)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, "quarantine entry not found: "+err.Error())
+		return
+	}
+	if !entry.ReplayEligible {
+		s.jsonError(w, http.StatusBadRequest, "quarantine entry is marked ineligible for replay")
+		return
+	}
+
 	norm, err := s.pipe.Replay(r.Context(), qID)
 	if err != nil {
 		s.jsonError(w, http.StatusBadRequest, "replay failed: "+err.Error())
@@ -469,14 +481,6 @@ func (s *Server) handleReplayAllQuarantine(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		s.jsonError(w, http.StatusInternalServerError, "failed to query pending quarantine entries: "+err.Error())
 		return
-	}
-
-	// If no pending items and force is not set, check if there are any eligible items at all
-	if len(ids) == 0 && !force {
-		allIDs, err := s.store.GetReplayPendingIDs(r.Context(), true)
-		if err == nil && len(allIDs) > 0 {
-			ids = allIDs
-		}
 	}
 
 	replayedCount := 0
@@ -586,10 +590,25 @@ func (s *Server) handleGetPack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try reading directly from file in packsDir first
-	filePath := filepath.Join(s.packsDir, name+".yaml")
+	// Security: Prevent path traversal
+	if strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		s.jsonError(w, http.StatusBadRequest, "invalid pack name: path traversal characters detected")
+		return
+	}
+
+	cleanBase := filepath.Clean(s.packsDir)
+	filePath := filepath.Join(cleanBase, name+".yaml")
+	rel, err := filepath.Rel(cleanBase, filePath)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		s.jsonError(w, http.StatusBadRequest, "path traversal blocked")
+		return
+	}
+
 	if _, err := os.Stat(filePath); err != nil {
-		filePath = filepath.Join(s.packsDir, name)
+		altPath := filepath.Join(cleanBase, name)
+		if altRel, altErr := filepath.Rel(cleanBase, altPath); altErr == nil && !strings.HasPrefix(altRel, "..") {
+			filePath = altPath
+		}
 	}
 	if data, err := os.ReadFile(filePath); err == nil {
 		w.Header().Set("Content-Type", "application/x-yaml; charset=utf-8")
@@ -706,13 +725,35 @@ func (s *Server) handleActivatePack(w http.ResponseWriter, r *http.Request) {
 
 	// Persist to packs directory if available
 	if s.packsDir != "" {
+		cleanBase := filepath.Clean(s.packsDir)
+		if strings.ContainsAny(req.Filename, "/\\") || strings.Contains(req.Filename, "..") {
+			s.jsonError(w, http.StatusBadRequest, "invalid pack filename: path traversal characters detected")
+			return
+		}
+		if strings.ContainsAny(newPack.Metadata.Name, "/\\") || strings.Contains(newPack.Metadata.Name, "..") {
+			s.jsonError(w, http.StatusBadRequest, "invalid pack name: path traversal characters detected")
+			return
+		}
+
 		fn := req.Filename
 		if fn == "" {
 			fn = newPack.Metadata.Name + ".yaml"
 		}
-		targetPath := filepath.Join(s.packsDir, fn)
+		fn = filepath.Base(fn)
+		if fn == "." || fn == "" {
+			s.jsonError(w, http.StatusBadRequest, "invalid pack filename")
+			return
+		}
+		targetPath := filepath.Join(cleanBase, fn)
+		rel, err := filepath.Rel(cleanBase, targetPath)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			s.jsonError(w, http.StatusBadRequest, "path traversal blocked")
+			return
+		}
+
 		if err := os.WriteFile(targetPath, []byte(req.YamlContent), 0644); err != nil {
-			s.jsonError(w, http.StatusInternalServerError, "failed to persist pack file: "+err.Error())
+			log.Printf("ERROR: failed to persist pack file to %s: %v", targetPath, err)
+			s.jsonError(w, http.StatusInternalServerError, "failed to persist pack file")
 			return
 		}
 	}
@@ -796,12 +837,21 @@ func (s *Server) handleStaticOrSPA(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, indexFile)
 }
 
-// corsMiddleware adds basic security and local CORS headers.
+// corsMiddleware adds security and local CORS headers.
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			// Restrict to local/internal origins rather than wildcard *
+			if strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1") ||
+				strings.HasPrefix(origin, "https://localhost") ||
+				strings.HasPrefix(origin, "https://127.0.0.1") {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+			}
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-WORM-Key")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -815,7 +865,9 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 func (s *Server) jsonResponse(w http.ResponseWriter, code int, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("ERROR: failed to encode json response: %v", err)
+	}
 }
 
 func (s *Server) jsonError(w http.ResponseWriter, code int, msg string) {

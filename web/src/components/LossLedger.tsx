@@ -106,7 +106,11 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
 
       <div className="mt-2 text-[11px] font-mono text-[#8b949e] flex justify-between items-center">
         <span>Reason: {auditReason}</span>
-        <span>Loss rate: 0.000000% (No dropped datagrams)</span>
+        <span>
+          {isValid
+            ? 'Loss rate: 0.000000% (No dropped datagrams)'
+            : `Loss rate: AUDIT FAILED — ${auditReason}`}
+        </span>
       </div>
     </div>
   );

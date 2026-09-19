@@ -518,7 +518,9 @@ func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedE
 	err = s.db.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id = ? LIMIT 1;", event.Worm.RawID).Scan(&existingEventID)
 	if err == nil && existingEventID != "" {
 		event.Worm.EventID = existingEventID
-		data, _ = json.Marshal(event)
+		if updatedData, marshalErr := json.Marshal(event); marshalErr == nil {
+			data = updatedData
+		}
 	}
 
 	eventHash := sha256.Sum256(data)

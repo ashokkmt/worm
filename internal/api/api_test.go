@@ -339,4 +339,86 @@ func TestAPI_QuarantineReplayAll(t *testing.T) {
 	}
 }
 
+func TestAPI_PathTraversalBlocked(t *testing.T) {
+	srv, store, pipe, tempDir := setupTestServer(t)
+	defer os.RemoveAll(tempDir)
+	defer store.Close()
+	defer pipe.Stop()
+
+	handler := srv.Handler()
+
+	// 1. Path traversal in GET /api/v1/packs/{name}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/packs/..%2f..%2fetc%2fpasswd", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for path traversal attempt, got %d", rec.Code)
+	}
+
+	// 2. Path traversal in POST /api/v1/packs/activate with malicious filename
+	maliciousPayload := map[string]string{
+		"yaml_content": `apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: malicious-pack
+  version: 1.0.0
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "TEST"
+`,
+		"filename": "../../evil.yaml",
+	}
+	body, _ := json.Marshal(maliciousPayload)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/packs/activate", bytes.NewReader(body))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request for malicious filename, got %d", rec.Code)
+	}
+}
+
+func TestAPI_ReplayIneligibleBlocked(t *testing.T) {
+	srv, store, pipe, tempDir := setupTestServer(t)
+	defer os.RemoveAll(tempDir)
+	defer store.Close()
+	defer pipe.Stop()
+
+	ctx := context.Background()
+	// Create a raw record and quarantine it as ineligible (replay_eligible = false)
+	raw, err := store.Store(ctx, model.IngestedRecord{
+		Transport:  "syslog",
+		SourceIP:   "127.0.0.1",
+		RawBytes:   []byte("<14>1 unparseable"),
+		ReceivedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("store failed: %v", err)
+	}
+
+	err = store.Quarantine(ctx, model.QuarantineEntry{
+		QuarantineID:   "quar-ineligible-01",
+		RawID:          raw.RawID,
+		RawSHA256:      raw.RawSHA256,
+		Stage:          "decode",
+		Reason:         "corrupt_binary",
+		RawPreview:     "preview",
+		ReplayEligible: false, // Ineligible!
+		QuarantinedAt:  time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("quarantine failed: %v", err)
+	}
+
+	handler := srv.Handler()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/quarantine/quar-ineligible-01/replay", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request when attempting to replay ineligible entry, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 
