@@ -50,7 +50,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
     fetchSources();
     // If stats are not provided from App, fetch them here
     if (propStats === undefined) {
-      apiService.getStats().then(setInternalStats).catch(() => {});
+      apiService.getStats().then(setInternalStats).catch(() => { });
     }
     const interval = setInterval(fetchSources, 5000);
     return () => clearInterval(interval);
@@ -141,30 +141,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
       />
 
       {/* Two Column Layout: Sources Inventory & Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-w-0">
+
         {/* Active Sources Table */}
-        <div className="lg:col-span-2 bg-[#161b22] border border-[#30363d] rounded-md p-4">
-          <div className="flex items-center justify-between pb-3 border-b border-[#21262d]">
-            <div className="flex items-center space-x-2">
-              <Server className="w-4 h-4 text-[#58a6ff]" />
-              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#f0f6fc]">
+        <div className="lg:col-span-2 bg-[#161b22] border border-[#30363d] rounded-md p-4 min-w-0">
+          <div className="flex items-center justify-between pb-3 border-b border-[#21262d] gap-2 min-w-0">
+            <div className="flex items-center space-x-2 min-w-0">
+              <Server className="w-4 h-4 text-[#58a6ff] shrink-0" />
+              <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-[#f0f6fc] truncate">
                 Ingestion Sources Inventory
               </h2>
             </div>
-            <span className="text-xs font-mono text-[#8b949e]">
+            <span className="text-xs font-mono text-[#8b949e] shrink-0">
               {sources.length} active source feeds
             </span>
           </div>
 
-          <div className="overflow-x-auto mt-3">
+          <div className="overflow-x-auto mt-3 max-w-full">
             <table className="w-full text-left text-xs font-mono">
               <thead>
                 <tr className="text-[#8b949e] border-b border-[#21262d]">
-                  <th className="py-2 px-2 font-medium">Category</th>
-                  <th className="py-2 px-2 font-medium">Source ID / IP</th>
-                  <th className="py-2 px-2 font-medium text-right">Event Count</th>
-                  <th className="py-2 px-2 font-medium text-right">Last Seen</th>
+                  <th className="py-2 px-2 font-medium whitespace-nowrap">Category</th>
+                  <th className="py-2 px-2 font-medium whitespace-nowrap">Source ID / IP</th>
+                  <th className="py-2 px-2 font-medium text-right whitespace-nowrap">Event Count</th>
+                  <th className="py-2 px-2 font-medium text-right whitespace-nowrap">Last Seen</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#21262d]">
@@ -177,16 +177,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
                 ) : (
                   sources.map((src, idx) => (
                     <tr key={idx} className="hover:bg-[#21262d]/50 transition-colors">
-                      <td className="py-2 px-2">
+                      <td className="py-2 px-2 whitespace-nowrap">
                         <Badge variant="blue">{src.category}</Badge>
                       </td>
-                      <td className="py-2 px-2 font-semibold text-[#f0f6fc]">
+                      <td className="py-2 px-2 font-semibold text-[#f0f6fc] whitespace-nowrap">
                         {src.source_id}
                       </td>
-                      <td className="py-2 px-2 text-right text-emerald-400 font-semibold">
+                      <td className="py-2 px-2 text-right text-emerald-400 font-semibold whitespace-nowrap">
                         {src.events.toLocaleString()}
                       </td>
-                      <td className="py-2 px-2 text-right text-[#8b949e]">
+                      <td className="py-2 px-2 text-right text-[#8b949e] whitespace-nowrap">
                         {src.last_seen ? new Date(src.last_seen).toLocaleTimeString() : 'N/A'}
                       </td>
                     </tr>
