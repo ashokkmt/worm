@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: app-payment-gateway
-  version: 1.0.0
+  version: 1.0.1
   description: E-Commerce Payment Gateway JSON service log events
   author: WORM Team
 spec:

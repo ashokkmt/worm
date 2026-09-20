@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: network-device-firewall
-  version: 1.0.0
+  version: 1.0.5
   description: Palo Alto PAN-OS perimeter firewall traffic and threat events
   author: WORM Team
 spec:

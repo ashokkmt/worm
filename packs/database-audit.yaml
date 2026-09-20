@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: database-audit
-  version: 1.0.0
+  version: 1.0.1
   description: PostgreSQL and MySQL database audit log CSV exports
   author: WORM Team
 spec:

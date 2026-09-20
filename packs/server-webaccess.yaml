@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: server-webaccess
-  version: 1.0.0
+  version: 1.0.1
   description: Nginx and Apache Web Server access logs (Combined Log Format)
   author: WORM Team
 spec:

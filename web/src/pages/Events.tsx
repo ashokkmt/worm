@@ -265,25 +265,16 @@ export const Events: React.FC<EventsProps> = ({ initialEventId }) => {
               <h3 className="text-sm font-mono font-bold text-[#f0f6fc] truncate">
                 Event Record: <span className="text-[#58a6ff]">{selectedEvent.worm.event_id}</span>
               </h3>
-              <button
-                onClick={() => setSelectedEvent(null)}
-                className="text-[#8b949e] hover:text-white p-1.5 rounded-md hover:bg-[#21262d] transition-colors"
-                aria-label="Close JSON preview"
-              >
-                {/* <X className="w-4 h-4" /> */}
-              </button>
-            </div>
-            <pre className="bg-[#0d1117] border border-[#21262d] p-4 rounded-md text-xs font-mono text-[#c9d1d9] overflow-auto max-h-[65vh] w-full max-w-full min-w-0 leading-relaxed">
-              {JSON.stringify(selectedEvent, null, 2)}
-            </pre>
-            <div className="flex justify-end pt-2">
-              <button
+                <button
                 onClick={() => setSelectedEvent(null)}
                 className="px-4 py-2 bg-[#21262d] hover:bg-[#30363d] text-xs font-mono font-medium rounded-md text-[#c9d1d9] hover:text-white transition-colors border border-[#30363d]"
               >
                 Close
               </button>
             </div>
+            <pre className="bg-[#0d1117] border border-[#21262d] p-4 rounded-md text-xs font-mono text-[#c9d1d9] overflow-auto max-h-[65vh] w-full max-w-full min-w-0 leading-relaxed">
+              {JSON.stringify(selectedEvent, null, 2)}
+            </pre>
           </div>
         </div>
       )}

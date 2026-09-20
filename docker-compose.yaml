@@ -122,7 +122,7 @@ services:
     ports:
       - "8085:8080/tcp"
     volumes:
-      - ./data:/data
+      - ./data:/data:ro
     restart: unless-stopped
     networks:
       - worm-net

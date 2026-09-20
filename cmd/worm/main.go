@@ -311,7 +311,7 @@ func main() {
 			InboxDir:   *inboxDir,
 			DBPath:     *dbPath,
 			Workers:    *workers,
-			Version:    "1.0.0",
+			Version:    "1.0.4",
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
 		if err := uiServer.Start(); err != nil {

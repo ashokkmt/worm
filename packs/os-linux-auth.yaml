@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: os-linux-auth
-  version: 1.0.0
+  version: 1.0.2
   description: Linux system authentication and SSH daemon logs (RFC 3164)
   author: WORM Team
 spec:

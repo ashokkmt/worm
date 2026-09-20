@@ -98,7 +98,7 @@ export const Config: React.FC = () => {
                   <div className="text-[#f0f6fc] font-semibold truncate">SQLite Raw &amp; Quarantine Store</div>
                   <div className="text-[11px] text-[#8b949e] truncate mt-0.5">WAL mode, synchronous=NORMAL, cryptographic store</div>
                 </div>
-                <span className="text-[#c9d1d9] font-mono shrink-0 text-[11px] sm:text-xs truncate bg-[#161b22] px-2.5 py-1 rounded border border-[#30363d]">{config?.db_path || 'data/worm.db'}</span>
+                <span className="text-[#c9d1d9] font-mono min-w-0 max-w-[50%] text-[11px] sm:text-xs truncate bg-[#161b22] px-2.5 py-1 rounded border border-[#30363d]">{config?.db_path || 'data/worm.db'}</span>
               </div>
 
               <div className="flex items-center justify-between p-3 rounded-md bg-[#0d1117] border border-[#21262d] gap-3 min-w-0">
@@ -117,7 +117,7 @@ export const Config: React.FC = () => {
                   <div className="text-[11px] text-[#8b949e] truncate mt-0.5">SIH 26156 reference core</div>
                 </div>
                 <div className="shrink-0">
-                  <Badge variant="purple">v{config?.version || '1.0.0'}</Badge>
+                  <Badge variant="purple">v{config?.version || '1.0.4'}</Badge>
                 </div>
               </div>
             </div>

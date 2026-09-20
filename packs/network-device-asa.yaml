@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: network-device-asa
-  version: 1.0.0
+  version: 1.0.3
   description: Cisco ASA perimeter gateway security appliance events
   author: WORM Team
 spec:
