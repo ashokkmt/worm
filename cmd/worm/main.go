@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"worm/internal/api"
+	"worm/internal/cli"
 	"worm/internal/ingest"
 	"worm/internal/model"
 	"worm/internal/output"
@@ -29,47 +30,47 @@ func main() {
 		cmd := os.Args[1]
 		switch cmd {
 		case "stop", "-stop", "--stop":
-			stopDaemon(defaultPIDFile)
+			cli.StopDaemon(cli.DefaultPIDFile)
 			return
 		case "status", "-status", "--status":
-			statusDaemon(defaultPIDFile, ":9090")
+			cli.StatusDaemon(cli.DefaultPIDFile, ":9090")
 			return
 		case "packs", "-packs", "--packs":
 			for i, a := range os.Args {
 				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-					applyPackCLI(os.Args[i+1], ":9090", "packs")
+					cli.ApplyPackCLI(os.Args[i+1], ":9090", "packs")
 					return
 				}
 			}
-			listPacksCLI(":9090", "packs")
+			cli.ListPacksCLI(":9090", "packs")
 			return
 		case "pack", "-pack", "--pack":
 			for i, a := range os.Args {
 				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-					applyPackCLI(os.Args[i+1], ":9090", "packs")
+					cli.ApplyPackCLI(os.Args[i+1], ":9090", "packs")
 					return
 				}
 			}
 			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
-				viewPackCLI(os.Args[2], ":9090", "packs")
+				cli.ViewPackCLI(os.Args[2], ":9090", "packs")
 				return
 			}
-			listPacksCLI(":9090", "packs")
+			cli.ListPacksCLI(":9090", "packs")
 			return
 		case "replay", "-replay", "--replay":
 			if len(os.Args) >= 3 {
 				target := os.Args[2]
 				if target == "all" || target == "--all" {
-					replayAllCLI(":9090")
+					cli.ReplayAllCLI(":9090")
 					return
 				}
-				replaySingleCLI(target, ":9090")
+				cli.ReplaySingleCLI(target, ":9090")
 				return
 			}
-			listQuarantineCLI(":9090", "data/worm.db")
+			cli.ListQuarantineCLI(":9090", "data/worm.db")
 			return
 		case "replay-all", "-replay-all", "--replay-all":
-			replayAllCLI(":9090")
+			cli.ReplayAllCLI(":9090")
 			return
 		}
 	}
@@ -109,45 +110,45 @@ func main() {
 
 	// Handle standalone actions parsed via flags
 	if *stopFlag {
-		stopDaemon(defaultPIDFile)
+		cli.StopDaemon(cli.DefaultPIDFile)
 		return
 	}
 	if *statusFlag {
-		statusDaemon(defaultPIDFile, *uiAddr)
+		cli.StatusDaemon(cli.DefaultPIDFile, *uiAddr)
 		return
 	}
 	if *packName != "" {
 		if *fileFlag != "" {
-			applyPackCLI(*fileFlag, *uiAddr, *packsDir)
+			cli.ApplyPackCLI(*fileFlag, *uiAddr, *packsDir)
 			return
 		}
-		viewPackCLI(*packName, *uiAddr, *packsDir)
+		cli.ViewPackCLI(*packName, *uiAddr, *packsDir)
 		return
 	}
 	if *fileFlag != "" {
-		applyPackCLI(*fileFlag, *uiAddr, *packsDir)
+		cli.ApplyPackCLI(*fileFlag, *uiAddr, *packsDir)
 		return
 	}
 	if *replayAllFlag {
-		replayAllCLI(*uiAddr)
+		cli.ReplayAllCLI(*uiAddr)
 		return
 	}
 	if *replayFlag != "" {
 		if *replayFlag == "all" {
-			replayAllCLI(*uiAddr)
+			cli.ReplayAllCLI(*uiAddr)
 			return
 		}
 		if *replayFlag == "list" {
-			listQuarantineCLI(*uiAddr, *dbPath)
+			cli.ListQuarantineCLI(*uiAddr, *dbPath)
 			return
 		}
-		replaySingleCLI(*replayFlag, *uiAddr)
+		cli.ReplaySingleCLI(*replayFlag, *uiAddr)
 		return
 	}
 
 	// Detached background mode
 	if *detached {
-		runDaemonMode(defaultPIDFile, defaultLogFile, *uiAddr)
+		cli.RunDaemonMode(cli.DefaultPIDFile, cli.DefaultLogFile, *uiAddr)
 		return
 	}
 
@@ -426,7 +427,7 @@ func main() {
 	_ = compositeSink.Close()
 
 	if os.Getenv("WORM_DAEMON") == "1" {
-		_ = os.Remove(defaultPIDFile)
+		_ = os.Remove(cli.DefaultPIDFile)
 	}
 
 	stats := p.Stats()

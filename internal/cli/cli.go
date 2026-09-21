@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"worm/internal/packs"
@@ -20,11 +19,11 @@ import (
 )
 
 const (
-	defaultPIDFile = "data/worm.pid"
-	defaultLogFile = "data/worm.log"
+	DefaultPIDFile = "data/worm.pid"
+	DefaultLogFile = "data/worm.log"
 )
 
-func getBaseURL(uiAddr string) string {
+func GetBaseURL(uiAddr string) string {
 	if uiAddr == "" || uiAddr == "none" {
 		uiAddr = ":9090"
 	}
@@ -37,7 +36,7 @@ func getBaseURL(uiAddr string) string {
 	return uiAddr
 }
 
-func readPID(pidFile string) (int, error) {
+func ReadPID(pidFile string) (int, error) {
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return 0, err
@@ -50,25 +49,13 @@ func readPID(pidFile string) (int, error) {
 	return pid, nil
 }
 
-func isPIDAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
-}
-
-func runDaemonMode(pidFile, logFile string, uiAddr string) {
+func RunDaemonMode(pidFile, logFile string, uiAddr string) {
 	if os.Getenv("WORM_DAEMON") == "1" {
 		return
 	}
 
 	// Check if already running
-	if pid, err := readPID(pidFile); err == nil && isPIDAlive(pid) {
+	if pid, err := ReadPID(pidFile); err == nil && IsPIDAlive(pid) {
 		fmt.Fprintf(os.Stderr, "ERROR: WORM engine is already running (PID: %d).\nUse './bin/worm -stop' to stop it first.\n", pid)
 		os.Exit(1)
 	}
@@ -107,13 +94,16 @@ func runDaemonMode(pidFile, logFile string, uiAddr string) {
 		os.Exit(1)
 	}
 
-	cmd := exec.Command(os.Args[0], childArgs...)
+	execPath, err := os.Executable()
+	if err != nil {
+		execPath = os.Args[0]
+	}
+
+	cmd := exec.Command(execPath, childArgs...)
 	cmd.Env = append(os.Environ(), "WORM_DAEMON=1")
 	cmd.Stdout = outLog
 	cmd.Stderr = outLog
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid: true,
-	}
+	setDaemonSysProcAttr(cmd)
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed to start background daemon: %v\n", err)
@@ -125,7 +115,7 @@ func runDaemonMode(pidFile, logFile string, uiAddr string) {
 
 	fmt.Printf("\n[WORM] Engine daemon started successfully in background!\n")
 	fmt.Printf("  * Process ID:      %d\n", cmd.Process.Pid)
-	fmt.Printf("  * Management UI:   %s\n", getBaseURL(uiAddr))
+	fmt.Printf("  * Management UI:   %s\n", GetBaseURL(uiAddr))
 	fmt.Printf("  * Logging Stream:  %s\n", logFile)
 	fmt.Printf("  * Quick Commands:\n")
 	fmt.Printf("      ./bin/worm -packs                  # List active parser packs\n")
@@ -138,9 +128,9 @@ func runDaemonMode(pidFile, logFile string, uiAddr string) {
 	os.Exit(0)
 }
 
-func stopDaemon(pidFile string) {
-	pid, err := readPID(pidFile)
-	if err != nil || !isPIDAlive(pid) {
+func StopDaemon(pidFile string) {
+	pid, err := ReadPID(pidFile)
+	if err != nil || !IsPIDAlive(pid) {
 		fmt.Fprintf(os.Stderr, "[WORM] No running daemon found (PID file %s missing or inactive).\n", pidFile)
 		_ = os.Remove(pidFile)
 		return
@@ -153,29 +143,18 @@ func stopDaemon(pidFile string) {
 	}
 
 	fmt.Printf("[WORM] Stopping daemon process (PID: %d)...\n", pid)
-	_ = proc.Signal(syscall.SIGTERM)
-
-	// Wait up to 5 seconds
-	for i := 0; i < 50; i++ {
-		time.Sleep(100 * time.Millisecond)
-		if !isPIDAlive(pid) {
-			_ = os.Remove(pidFile)
-			fmt.Printf("[WORM] Engine daemon (PID: %d) stopped successfully.\n", pid)
-			return
-		}
+	if err := stopProcess(proc); err != nil {
+		fmt.Fprintf(os.Stderr, "[WORM] Error stopping daemon: %v\n", err)
 	}
-
-	// Force kill if still alive
-	_ = proc.Signal(syscall.SIGKILL)
 	_ = os.Remove(pidFile)
-	fmt.Printf("[WORM] Engine daemon (PID: %d) forcefully terminated.\n", pid)
+	fmt.Printf("[WORM] Engine daemon (PID: %d) stopped successfully.\n", pid)
 }
 
-func statusDaemon(pidFile, uiAddr string) {
-	pid, err := readPID(pidFile)
-	alive := (err == nil && isPIDAlive(pid))
+func StatusDaemon(pidFile, uiAddr string) {
+	pid, err := ReadPID(pidFile)
+	alive := (err == nil && IsPIDAlive(pid))
 
-	baseURL := getBaseURL(uiAddr)
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 1 * time.Second}
 	resp, httpErr := client.Get(baseURL + "/api/v1/health")
 
@@ -203,8 +182,8 @@ func statusDaemon(pidFile, uiAddr string) {
 	fmt.Printf("--------------------------\n\n")
 }
 
-func listPacksCLI(uiAddr, packsDir string) {
-	baseURL := getBaseURL(uiAddr)
+func ListPacksCLI(uiAddr, packsDir string) {
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/v1/packs")
 
@@ -276,14 +255,14 @@ func listPacksCLI(uiAddr, packsDir string) {
 	fmt.Printf("--------------------------------------------------------------------------------\n\n")
 }
 
-func viewPackCLI(packName, uiAddr, packsDir string) {
+func ViewPackCLI(packName, uiAddr, packsDir string) {
 	packName = filepath.Base(packName)
 	if strings.ContainsAny(packName, "/\\") || strings.Contains(packName, "..") {
 		fmt.Fprintf(os.Stderr, "ERROR: Invalid pack name %q\n", packName)
 		os.Exit(1)
 	}
 
-	baseURL := getBaseURL(uiAddr)
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/v1/packs/" + packName)
 
@@ -311,7 +290,7 @@ func viewPackCLI(packName, uiAddr, packsDir string) {
 	fmt.Println(string(data))
 }
 
-func applyPackCLI(packFilePath, uiAddr, packsDir string) {
+func ApplyPackCLI(packFilePath, uiAddr, packsDir string) {
 	data, err := os.ReadFile(packFilePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to read pack file %s: %v\n", packFilePath, err)
@@ -348,7 +327,7 @@ func applyPackCLI(packFilePath, uiAddr, packsDir string) {
 	fmt.Printf("[WORM] Installed permanently to: %s\n", destPath)
 
 	// 2. Activate in running daemon if available
-	baseURL := getBaseURL(uiAddr)
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 3 * time.Second}
 
 	reqBody, _ := json.Marshal(map[string]string{
@@ -381,8 +360,8 @@ func applyPackCLI(packFilePath, uiAddr, packsDir string) {
 	}
 }
 
-func listQuarantineCLI(uiAddr, dbPath string) {
-	baseURL := getBaseURL(uiAddr)
+func ListQuarantineCLI(uiAddr, dbPath string) {
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(baseURL + "/api/v1/quarantine?limit=50")
 
@@ -444,8 +423,8 @@ func listQuarantineCLI(uiAddr, dbPath string) {
 	fmt.Printf("Use './bin/worm -replay <id>' or './bin/worm -replay all' to reprocess.\n\n")
 }
 
-func replaySingleCLI(qID, uiAddr string) {
-	baseURL := getBaseURL(uiAddr)
+func ReplaySingleCLI(qID, uiAddr string) {
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Post(baseURL+"/api/v1/quarantine/"+qID+"/replay", "application/json", nil)
 	if err != nil {
@@ -474,8 +453,8 @@ func replaySingleCLI(qID, uiAddr string) {
 	fmt.Printf("  * Normalized Event:  %s\n\n", res.Event.Worm.EventID)
 }
 
-func replayAllCLI(uiAddr string) {
-	baseURL := getBaseURL(uiAddr)
+func ReplayAllCLI(uiAddr string) {
+	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(baseURL+"/api/v1/quarantine/replay-all", "application/json", nil)
 	if err != nil {

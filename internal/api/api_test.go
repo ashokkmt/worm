@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -421,4 +422,44 @@ func TestAPI_ReplayIneligibleBlocked(t *testing.T) {
 	}
 }
 
+func TestAPI_StaticAndSPARouting(t *testing.T) {
+	srv, store, pipe, tempDir := setupTestServer(t)
+	defer os.RemoveAll(tempDir)
+	defer store.Close()
+	defer pipe.Stop()
 
+	handler := srv.Handler()
+
+	// 1. Root index.html
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "WORM Test UI") {
+		t.Fatalf("expected root to serve index.html, got: %s", rec.Body.String())
+	}
+
+	// 2. Static asset file
+	req = httptest.NewRequest(http.MethodGet, "/assets/test.js", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /assets/test.js, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "console.log('test')") {
+		t.Fatalf("expected static JS content, got: %s", rec.Body.String())
+	}
+
+	// 3. SPA client-side route fallback
+	req = httptest.NewRequest(http.MethodGet, "/events/worm-evt-001", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for SPA route, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "WORM Test UI") {
+		t.Fatalf("expected SPA fallback to index.html, got: %s", rec.Body.String())
+	}
+}

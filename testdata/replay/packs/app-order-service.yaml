@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: app-order-service
-  version: 1.0.0
+  version: 1.0.2
   description: E-Commerce Microservice Order Lifecycle JSON logs
   author: WORM Team
 spec:

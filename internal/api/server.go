@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -807,7 +808,7 @@ func (s *Server) handleStaticOrSPA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reqPath := strings.TrimPrefix(filepath.Clean(r.URL.Path), "/")
+	reqPath := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 	if reqPath == "" || reqPath == "." {
 		reqPath = "index.html"
 	}

@@ -2,7 +2,7 @@ apiVersion: worm.io/v1
 kind: LogSource
 metadata:
   name: edge-waf
-  version: 1.0.0
+  version: 1.0.5
   description: Edge Web Application Firewall Threat Inspection JSON logs
   author: WORM Team
 spec:
