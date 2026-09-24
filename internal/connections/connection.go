@@ -18,20 +18,25 @@ var (
 	connNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 	semverRegex   = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`)
 
-	validConnectionTypes = map[string]bool{
+	validSourceTypes = map[string]bool{
+		"cloud_pull":  true,
+		"kafka_input": true,
+		"syslog_tls":  true,
+		"s3_watch":    true,
+	}
+
+	validSinkTypes = map[string]bool{
 		"http_output":    true,
 		"kafka_output":   true,
 		"parquet_output": true,
 		"ndjson_output":  true,
-		"kafka_input":    true,
-		"cloud_pull":     true,
 	}
 )
 
-// Connection represents a declarative connection resource configuration in WORM.
+// Connection represents a declarative connection resource configuration in WORM (kind: Source or Sink).
 type Connection struct {
 	APIVersion string             `yaml:"apiVersion" json:"apiVersion"`
-	Kind       string             `yaml:"kind" json:"kind"`
+	Kind       string             `yaml:"kind" json:"kind"` // "Source" or "Sink"
 	Metadata   ConnectionMetadata `yaml:"metadata" json:"metadata"`
 	Spec       ConnectionSpec     `yaml:"spec" json:"spec"`
 }
@@ -62,6 +67,9 @@ type ConnectionSpec struct {
 	MaxRowsPerFile int           `yaml:"maxRowsPerFile,omitempty" json:"maxRowsPerFile,omitempty"`
 	Manifest       bool          `yaml:"manifest,omitempty" json:"manifest,omitempty"`
 	SecretRef      string        `yaml:"secretRef,omitempty" json:"secretRef,omitempty"`
+	WatermarkPath  string        `yaml:"watermarkPath,omitempty" json:"watermarkPath,omitempty"`
+	Interval       string        `yaml:"interval,omitempty" json:"interval,omitempty"`
+	BatchSize      int           `yaml:"batchSize,omitempty" json:"batchSize,omitempty"`
 }
 
 type DeliverySpec struct {
@@ -78,12 +86,58 @@ type RetrySpec struct {
 }
 
 type EndpointSpec struct {
-	URL       string `yaml:"url" json:"url"`
-	Timeout   string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	SecretRef string `yaml:"secretRef,omitempty" json:"secretRef,omitempty"`
+	URL           string `yaml:"url" json:"url"`
+	Timeout       string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	SecretRef     string `yaml:"secretRef,omitempty" json:"secretRef,omitempty"`
+	AuthHeader    string `yaml:"authHeader,omitempty" json:"authHeader,omitempty"`
+	Interval      string `yaml:"interval,omitempty" json:"interval,omitempty"`
+	BatchSize     int    `yaml:"batchSize,omitempty" json:"batchSize,omitempty"`
+	WatermarkPath string `yaml:"watermarkPath,omitempty" json:"watermarkPath,omitempty"`
 }
 
-// LoadConnection parses a strict YAML connection resource stream.
+// ConnectionSummary represents a flattened summary of a connection resource for API and UI consumption.
+type ConnectionSummary struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+	Target  string `json:"target"`
+}
+
+// Summary returns a flattened summary representation of this Connection resource.
+func (c *Connection) Summary() ConnectionSummary {
+	target := ""
+	switch c.Spec.Type {
+	case "http_output", "cloud_pull":
+		if c.Spec.Endpoint != nil {
+			target = c.Spec.Endpoint.URL
+		}
+	case "kafka_output", "kafka_input":
+		if c.Spec.Topic != "" {
+			target = c.Spec.Topic
+		} else if len(c.Spec.Topics) > 0 {
+			target = strings.Join(c.Spec.Topics, ", ")
+		}
+	case "parquet_output", "ndjson_output":
+		target = c.Spec.Path
+	case "syslog_tls":
+		target = ":6514 (RFC 5425)"
+	case "s3_watch":
+		target = c.Spec.Path
+	}
+
+	return ConnectionSummary{
+		Name:    c.Metadata.Name,
+		Version: c.Metadata.Version,
+		Kind:    c.Kind,
+		Type:    c.Spec.Type,
+		Enabled: c.Spec.Enabled,
+		Target:  target,
+	}
+}
+
+// LoadConnection parses a strict YAML resource stream (Source, Sink, or Connection).
 func LoadConnection(r io.Reader) (*Connection, error) {
 	dec := yaml.NewDecoder(r)
 	dec.KnownFields(true)
@@ -94,10 +148,40 @@ func LoadConnection(r io.Reader) (*Connection, error) {
 	}
 
 	if err := conn.Validate(); err != nil {
-		return nil, fmt.Errorf("connection validation failed: %w", err)
+		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 
 	return &conn, nil
+}
+
+// LoadSource parses and enforces a Source resource.
+func LoadSource(r io.Reader) (*Connection, error) {
+	conn, err := LoadConnection(r)
+	if err != nil {
+		return nil, err
+	}
+	if conn.Kind != "Source" {
+		return nil, fmt.Errorf("expected kind Source, got %q", conn.Kind)
+	}
+	if !validSourceTypes[conn.Spec.Type] {
+		return nil, fmt.Errorf("invalid source type %q", conn.Spec.Type)
+	}
+	return conn, nil
+}
+
+// LoadSink parses and enforces a Sink resource.
+func LoadSink(r io.Reader) (*Connection, error) {
+	conn, err := LoadConnection(r)
+	if err != nil {
+		return nil, err
+	}
+	if conn.Kind != "Sink" {
+		return nil, fmt.Errorf("expected kind Sink, got %q", conn.Kind)
+	}
+	if !validSinkTypes[conn.Spec.Type] {
+		return nil, fmt.Errorf("invalid sink type %q", conn.Spec.Type)
+	}
+	return conn, nil
 }
 
 // Validate verifies structural correctness, type constraints, and secret safety.
@@ -105,9 +189,22 @@ func (c *Connection) Validate() error {
 	if c.APIVersion != "worm.io/v1" {
 		return fmt.Errorf("unsupported apiVersion %q (expected worm.io/v1)", c.APIVersion)
 	}
-	if c.Kind != "Connection" {
-		return fmt.Errorf("unsupported kind %q (expected Connection)", c.Kind)
+
+	switch c.Kind {
+	case "Source":
+		if !validSourceTypes[c.Spec.Type] {
+			return fmt.Errorf("invalid source type %q (expected cloud_pull, kafka_input, syslog_tls, s3_watch)", c.Spec.Type)
+		}
+	case "Sink":
+		if !validSinkTypes[c.Spec.Type] {
+			return fmt.Errorf("invalid sink type %q (expected http_output, kafka_output, parquet_output, ndjson_output)", c.Spec.Type)
+		}
+	case "Connection":
+		return errors.New("legacy kind 'Connection' is removed; use kind: Source or kind: Sink")
+	default:
+		return fmt.Errorf("unsupported kind %q (expected Source or Sink)", c.Kind)
 	}
+
 	if c.Metadata.Name == "" {
 		return errors.New("metadata.name is required")
 	}
@@ -119,9 +216,6 @@ func (c *Connection) Validate() error {
 	}
 	if !semverRegex.MatchString(c.Metadata.Version) {
 		return fmt.Errorf("invalid metadata.version %q: must be valid semver", c.Metadata.Version)
-	}
-	if !validConnectionTypes[c.Spec.Type] {
-		return fmt.Errorf("unsupported connection type %q", c.Spec.Type)
 	}
 
 	switch c.Spec.Type {

@@ -1,0 +1,14 @@
+apiVersion: worm.io/v1
+kind: Source
+metadata:
+  name: raw-kafka-stream
+  version: 1.0.0
+  description: Kafka consumer group input adapter for raw event intake
+spec:
+  type: kafka_input
+  enabled: true
+  brokers:
+    - kafka:9092
+  topic: worm.raw.events
+  consumerGroup: worm-core-workers
+  secretRef: kafka-client-auth

@@ -1,5 +1,5 @@
 apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: siem-events
   version: 1.0.0
@@ -18,4 +18,5 @@ spec:
   endpoint:
     url: http://127.0.0.1:8080/events
     timeout: 10s
+    authHeader: Authorization
     secretRef: siem-http-token

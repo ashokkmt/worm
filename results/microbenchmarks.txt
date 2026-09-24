@@ -1,0 +1,74 @@
+goos: darwin
+goarch: arm64
+pkg: worm/internal/decode
+cpu: Apple M2
+BenchmarkDetect/CSV-8      	  249621	      4886 ns/op	  18.83 MB/s	     440 B/op	       6 allocs/op
+BenchmarkDetect/JSON-8     	  201836	      5744 ns/op	  21.76 MB/s	     456 B/op	       5 allocs/op
+BenchmarkDetect/Syslog-8   	  223138	      5465 ns/op	  19.03 MB/s	     529 B/op	       8 allocs/op
+BenchmarkDetect/CEF-8      	  266794	      4321 ns/op	  22.68 MB/s	     801 B/op	      13 allocs/op
+BenchmarkDetect/LEEF-8     	  274820	      4323 ns/op	  19.20 MB/s	     617 B/op	       9 allocs/op
+BenchmarkDetect/XML-8      	  387967	      3224 ns/op	  37.84 MB/s	     995 B/op	      15 allocs/op
+BenchmarkDecode_JSON/256B-8         	  529408	      2204 ns/op	 104.33 MB/s	    1432 B/op	      33 allocs/op
+BenchmarkDecode_JSON/1KiB-8         	  123067	      9676 ns/op	 112.13 MB/s	    6754 B/op	     154 allocs/op
+BenchmarkDecode_JSON/8KiB-8         	  105028	     11557 ns/op	 698.83 MB/s	    8835 B/op	      17 allocs/op
+BenchmarkDecode_Syslog/RFC5424-8    	  929871	      1267 ns/op	  94.71 MB/s	    2778 B/op	      26 allocs/op
+BenchmarkDecode_Syslog/RFC3164-8    	 1823214	       639.8 ns/op	 118.79 MB/s	    1258 B/op	      21 allocs/op
+BenchmarkDecode_Syslog/Layered_CEF-8         	  266941	      4640 ns/op	  31.90 MB/s	    7207 B/op	      70 allocs/op
+BenchmarkDecode_Syslog/Layered_LEEF-8        	  355192	      3218 ns/op	  37.29 MB/s	    6816 B/op	      64 allocs/op
+BenchmarkDecode_LEEF/LEEF_1_0_Tab-8          	  863008	      1330 ns/op	  69.19 MB/s	    2624 B/op	      47 allocs/op
+BenchmarkDecode_LEEF/LEEF_2_0_LiteralDelim-8 	  820030	      1466 ns/op	  83.90 MB/s	    2712 B/op	      50 allocs/op
+BenchmarkDecode_LEEF/LEEF_2_0_HexDelim-8     	 1000000	      1173 ns/op	  91.20 MB/s	    1928 B/op	      45 allocs/op
+BenchmarkDecode_XML/SingleDocument-8         	  152893	      7743 ns/op	  44.82 MB/s	    8832 B/op	     176 allocs/op
+BenchmarkDecode_XML/Batch10Elements-8        	   41920	     24819 ns/op	  38.88 MB/s	   29472 B/op	     632 allocs/op
+BenchmarkDecode_XML/Batch100Elements-8       	    4952	    241888 ns/op	  37.85 MB/s	  274162 B/op	    5951 allocs/op
+BenchmarkDecode_CEF-8                        	  348571	      3401 ns/op	  37.64 MB/s	    3061 B/op	      54 allocs/op
+BenchmarkDecode_CSV-8                        	  933283	      1321 ns/op	  69.67 MB/s	    6088 B/op	      35 allocs/op
+PASS
+ok  	worm/internal/decode	28.098s
+goos: darwin
+goarch: arm64
+pkg: worm/internal/packs
+cpu: Apple M2
+BenchmarkPackMatch/1_Packs-8  	11301393	        91.32 ns/op	       8 B/op	       1 allocs/op
+BenchmarkPackMatch/10_Packs-8 	 1559702	       758.9 ns/op	      80 B/op	      10 allocs/op
+BenchmarkPackMatch/100_Packs-8         	  161816	      7622 ns/op	     800 B/op	     100 allocs/op
+BenchmarkPackMatch/1000_Packs-8        	   15206	     79738 ns/op	    8005 B/op	    1000 allocs/op
+BenchmarkNestedExtraction/DirectKey-8  	167291395	         7.300 ns/op	       0 B/op	       0 allocs/op
+BenchmarkNestedExtraction/Nested4Levels-8         	14552046	        84.09 ns/op	      64 B/op	       1 allocs/op
+PASS
+ok  	worm/internal/packs	10.048s
+goos: darwin
+goarch: arm64
+pkg: worm/internal/normalize
+cpu: Apple M2
+BenchmarkNormalizeAndValidate/Normalize_JSON_Payment-8         	  473288	      2498 ns/op	    2959 B/op	      42 allocs/op
+BenchmarkNormalizeAndValidate/Validate_NormalizedEvent-8       	 4973000	       266.8 ns/op	     441 B/op	       2 allocs/op
+BenchmarkNormalizeAndValidate/Full_Normalize_Plus_Validate-8   	  435615	      2709 ns/op	    3007 B/op	      44 allocs/op
+PASS
+ok  	worm/internal/normalize	5.308s
+goos: darwin
+goarch: arm64
+pkg: worm/internal/outbox
+cpu: Apple M2
+BenchmarkOutbox_Enqueue-8        	   33622	     34961 ns/op	   3.46 MB/s	     632 B/op	      17 allocs/op
+BenchmarkOutbox_FetchPending-8   	    2709	    425903 ns/op	  101328 B/op	    1643 allocs/op
+PASS
+ok  	worm/internal/outbox	3.273s
+goos: darwin
+goarch: arm64
+pkg: worm/internal/output
+cpu: Apple M2
+BenchmarkNDJSONSink_Emit-8    	  968427	      1198 ns/op	     544 B/op	       7 allocs/op
+BenchmarkKafkaSink_Emit-8     	 1000000	      1192 ns/op	     700 B/op	       9 allocs/op
+BenchmarkParquetSink_Emit-8   	  338532	      3351 ns/op	     765 B/op	      13 allocs/op
+PASS
+ok  	worm/internal/output	4.541s
+goos: darwin
+goarch: arm64
+pkg: worm/test/pressure
+cpu: Apple M2
+BenchmarkPipeline_E2E/1_Workers-8         	    4429	    912435 ns/op	   12321 B/op	     172 allocs/op
+BenchmarkPipeline_E2E/4_Workers-8         	    5888	   1201391 ns/op	   12336 B/op	     172 allocs/op
+BenchmarkPipeline_E2E/8_Workers-8         	    7263	   1622351 ns/op	   12344 B/op	     172 allocs/op
+PASS
+ok  	worm/test/pressure	23.237s

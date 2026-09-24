@@ -1,6 +1,7 @@
 export interface ConnectionSummary {
   name: string;
   version: string;
+  kind?: string;
   type: string;
   enabled: boolean;
   target: string;
@@ -16,8 +17,10 @@ export interface ConnectionValidationResponse {
 
 export interface ConnectionTestResponse {
   status: string;
-  target: string;
-  message: string;
+  success?: boolean;
+  target?: string;
+  message?: string;
+  error?: string;
 }
 
 export interface ConnectionApplyResponse {

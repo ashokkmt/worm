@@ -1,0 +1,16 @@
+apiVersion: worm.io/v1
+kind: Source
+metadata:
+  name: aws-cloudtrail-pull
+  version: 1.0.0
+  description: REST pull poller for AWS CloudTrail audit logs
+spec:
+  type: cloud_pull
+  enabled: true
+  endpoint:
+    url: https://audit.us-east-1.cloud/logs
+    timeout: 10s
+    interval: 10s
+    batchSize: 100
+    watermarkPath: data/watermarks/cloudtrail.state
+    secretRef: aws-credentials

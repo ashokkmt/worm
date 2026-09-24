@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
 	"io"
@@ -36,75 +38,181 @@ func main() {
 		case "status", "-status", "--status":
 			cli.StatusDaemon(cli.DefaultPIDFile, ":9090")
 			return
-		case "connections", "-connections", "--connections":
-			if len(os.Args) >= 3 {
+		case "sources", "-sources", "--sources":
+			srcDir := "sources"
+			for i, a := range os.Args {
+				if (a == "-sources-dir" || a == "--sources-dir") && i+1 < len(os.Args) {
+					srcDir = os.Args[i+1]
+				}
+			}
+			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
 				sub := os.Args[2]
 				switch sub {
 				case "validate":
 					for i, a := range os.Args {
 						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-							cli.ValidateConnectionCLI(os.Args[i+1])
+							cli.ValidateSourceCLI(os.Args[i+1])
 							return
 						}
 					}
-					fmt.Fprintln(os.Stderr, "Usage: worm connections validate -f <file.yaml>")
+					fmt.Fprintln(os.Stderr, "Usage: worm sources validate -f <file.yaml>")
 					return
 				case "test":
 					for i, a := range os.Args {
 						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-							cli.TestConnectionCLI(os.Args[i+1])
+							cli.TestSourceCLI(os.Args[i+1])
 							return
 						}
 					}
-					fmt.Fprintln(os.Stderr, "Usage: worm connections test -f <file.yaml>")
+					fmt.Fprintln(os.Stderr, "Usage: worm sources test -f <file.yaml>")
 					return
 				case "apply":
 					for i, a := range os.Args {
 						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-							cli.ApplyConnectionCLI(os.Args[i+1], ":9090", "connections")
+							cli.ApplySourceCLI(os.Args[i+1], ":9090", srcDir)
 							return
 						}
 					}
-					fmt.Fprintln(os.Stderr, "Usage: worm connections apply -f <file.yaml>")
+					fmt.Fprintln(os.Stderr, "Usage: worm sources apply -f <file.yaml>")
 					return
 				case "rollback":
-					cli.RollbackConnectionCLI(":9090", "connections")
+					cli.RollbackSourceCLI(":9090", srcDir)
 					return
 				case "list":
-					cli.ListConnectionsCLI(":9090", "connections")
+					cli.ListSourcesCLI(":9090", srcDir)
 					return
 				case "get":
 					if len(os.Args) >= 4 {
-						cli.GetConnectionCLI(os.Args[3], ":9090", "connections")
+						cli.GetSourceCLI(os.Args[3], ":9090", srcDir)
 						return
 					}
-					fmt.Fprintln(os.Stderr, "Usage: worm connections get <name>")
+					fmt.Fprintln(os.Stderr, "Usage: worm sources get <name>")
 					return
 				}
 			}
-			cli.ListConnectionsCLI(":9090", "connections")
+			cli.ListSourcesCLI(":9090", srcDir)
 			return
-		case "packs", "-packs", "--packs":
+		case "sinks", "-sinks", "--sinks":
+			sinkDir := "sinks"
 			for i, a := range os.Args {
-				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-					cli.ApplyPackCLI(os.Args[i+1], ":9090", "packs")
-					return
-				}
-			}
-			cli.ListPacksCLI(":9090", "packs")
-			return
-		case "pack", "-pack", "--pack":
-			for i, a := range os.Args {
-				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-					cli.ApplyPackCLI(os.Args[i+1], ":9090", "packs")
-					return
+				if (a == "-sinks-dir" || a == "--sinks-dir") && i+1 < len(os.Args) {
+					sinkDir = os.Args[i+1]
 				}
 			}
 			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
-				cli.ViewPackCLI(os.Args[2], ":9090", "packs")
-				return
+				sub := os.Args[2]
+				switch sub {
+				case "validate":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ValidateSinkCLI(os.Args[i+1])
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm sinks validate -f <file.yaml>")
+					return
+				case "test":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.TestSinkCLI(os.Args[i+1])
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm sinks test -f <file.yaml>")
+					return
+				case "apply":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ApplySinkCLI(os.Args[i+1], ":9090", sinkDir)
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm sinks apply -f <file.yaml>")
+					return
+				case "rollback":
+					cli.RollbackSinkCLI(":9090", sinkDir)
+					return
+				case "list":
+					cli.ListSinksCLI(":9090", sinkDir)
+					return
+				case "get":
+					if len(os.Args) >= 4 {
+						cli.GetSinkCLI(os.Args[3], ":9090", sinkDir)
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm sinks get <name>")
+					return
+				}
 			}
-			cli.ListPacksCLI(":9090", "packs")
+			cli.ListSinksCLI(":9090", sinkDir)
+			return
+
+		case "packs", "-packs", "--packs":
+			pDir := "packs"
+			for i, a := range os.Args {
+				if (a == "-packs-dir" || a == "--packs-dir") && i+1 < len(os.Args) {
+					pDir = os.Args[i+1]
+				}
+			}
+			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
+				sub := os.Args[2]
+				switch sub {
+				case "validate":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ValidatePackCLI(os.Args[i+1])
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs validate -f <file.yaml>")
+					return
+				case "test":
+					var file, sample string
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							file = os.Args[i+1]
+						}
+						if (a == "-sample" || a == "--sample") && i+1 < len(os.Args) {
+							sample = os.Args[i+1]
+						}
+					}
+					if file != "" {
+						cli.TestPackCLI(file, sample)
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs test -f <file.yaml> [-sample <sample_log_or_file>]")
+					return
+				case "apply":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ApplyPackCLI(os.Args[i+1], ":9090", pDir)
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs apply -f <file.yaml>")
+					return
+				case "rollback":
+					cli.RollbackPackCLI(":9090", pDir)
+					return
+				case "list":
+					cli.ListPacksCLI(":9090", pDir)
+					return
+				case "get":
+					if len(os.Args) >= 4 {
+						cli.GetPackCLI(os.Args[3], ":9090", pDir)
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs get <name>")
+					return
+				}
+			}
+			for i, a := range os.Args {
+				if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+					cli.ApplyPackCLI(os.Args[i+1], ":9090", pDir)
+					return
+				}
+			}
+			cli.ListPacksCLI(":9090", pDir)
 			return
 		case "replay", "-replay", "--replay":
 			if len(os.Args) >= 3 {
@@ -126,7 +234,8 @@ func main() {
 
 	dbPath := flag.String("db", "data/worm.db", "Path to SQLite raw store database")
 	packsDir := flag.String("packs-dir", "packs", "Path to YAML parser packs directory")
-	connsDir := flag.String("conns-dir", "connections", "Path to YAML connection resources directory")
+	sourcesDir := flag.String("sources-dir", "sources", "Path to YAML Ingestion Source resources directory")
+	sinksDir := flag.String("sinks-dir", "sinks", "Path to YAML Delivery Sink resources directory")
 	workers := flag.Int("workers", 4, "Number of concurrent pipeline workers")
 	readStdin := flag.Bool("stdin", false, "Read logs from stdin line-by-line")
 	verifyRawID := flag.String("verify", "", "Cryptographically verify a raw record by raw_id")
@@ -136,14 +245,16 @@ func main() {
 	detached := flag.Bool("d", false, "Run WORM engine in detached/daemon mode in the background")
 	stopFlag := flag.Bool("stop", false, "Stop running background WORM engine daemon")
 	statusFlag := flag.Bool("status", false, "Check status of background WORM engine daemon")
-	packName := flag.String("pack", "", "View YAML content of a pack, or use with -f to install")
-	fileFlag := flag.String("f", "", "YAML pack file path to install and reconcile")
 	replayFlag := flag.String("replay", "", "Manage quarantine DLQ: list pending logs, or replay with <quarantine_id> or 'all'")
 	replayAllFlag := flag.Bool("replay-all", false, "Replay all quarantined DLQ records")
 
 	// Multi-transport ingestion flags
 	syslogUDP := flag.String("syslog-udp", ":514", "UDP address for Syslog listener (:1514 for non-root, 'none' to disable)")
 	syslogTCP := flag.String("syslog-tcp", ":514", "TCP address for Syslog listener (:1514 for non-root, 'none' to disable)")
+	syslogTLS := flag.String("syslog-tls", ":6514", "TCP address for Syslog TLS (RFC 5425) listener (:7514 for non-root, 'none' to disable)")
+	tlsCert := flag.String("tls-cert", "", "Path to X.509 certificate file for Syslog TLS")
+	tlsKey := flag.String("tls-key", "", "Path to private key file for Syslog TLS")
+	tlsClientCA := flag.String("tls-client-ca", "", "Path to optional client CA file for Syslog TLS mutual authentication (mTLS)")
 	httpAddr := flag.String("http", ":8080", "HTTP address for REST ingestion ('none' to disable)")
 	httpKey := flag.String("http-key", "", "Optional API key for HTTP POST authentication")
 	inboxDir := flag.String("inbox", "data/inbox", "Path to monitored spool inbox directory ('none' to disable)")
@@ -166,18 +277,6 @@ func main() {
 	}
 	if *statusFlag {
 		cli.StatusDaemon(cli.DefaultPIDFile, *uiAddr)
-		return
-	}
-	if *packName != "" {
-		if *fileFlag != "" {
-			cli.ApplyPackCLI(*fileFlag, *uiAddr, *packsDir)
-			return
-		}
-		cli.ViewPackCLI(*packName, *uiAddr, *packsDir)
-		return
-	}
-	if *fileFlag != "" {
-		cli.ApplyPackCLI(*fileFlag, *uiAddr, *packsDir)
 		return
 	}
 	if *replayAllFlag {
@@ -295,6 +394,14 @@ func main() {
 		}
 	}
 
+	if *sourcesDir != "" {
+		if _, err := os.Stat(*sourcesDir); err == nil {
+			srcMgr := connections.NewManager(*sourcesDir)
+			_ = srcMgr.LoadDir(*sourcesDir)
+			fmt.Fprintf(os.Stderr, " Loaded %d sources from %s\n", len(srcMgr.List()), *sourcesDir)
+		}
+	}
+
 	// 2. Configure Output Sinks
 	var activeSinks []output.OutputSink
 	if *stdoutOutput {
@@ -338,6 +445,33 @@ func main() {
 		mgr.Register(ingest.NewSyslogTCPListener(*syslogTCP))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Syslog TCP on %s\n", *syslogTCP)
 	}
+	if *syslogTLS != "" && *syslogTLS != "none" {
+		var tlsCfg *tls.Config
+		if *tlsCert != "" && *tlsKey != "" {
+			cert, err := tls.LoadX509KeyPair(*tlsCert, *tlsKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "WARNING: Failed to load Syslog TLS cert/key: %v\n", err)
+			} else {
+				tlsCfg = &tls.Config{
+					Certificates: []tls.Certificate{cert},
+					MinVersion:   tls.VersionTLS12,
+				}
+				if *tlsClientCA != "" {
+					caCert, err := os.ReadFile(*tlsClientCA)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "WARNING: Failed to read client CA: %v\n", err)
+					} else {
+						caPool := x509.NewCertPool()
+						caPool.AppendCertsFromPEM(caCert)
+						tlsCfg.ClientCAs = caPool
+						tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+					}
+				}
+			}
+		}
+		mgr.Register(ingest.NewSyslogTLSListener(*syslogTLS, tlsCfg))
+		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Syslog TLS (RFC 5425) on %s\n", *syslogTLS)
+	}
 	if *httpAddr != "" && *httpAddr != "none" {
 		mgr.Register(ingest.NewHTTPListener(*httpAddr, *httpKey))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: HTTP POST on %s/api/v1/ingest\n", *httpAddr)
@@ -359,6 +493,7 @@ func main() {
 			UIAddress:  *uiAddr,
 			SyslogUDP:  *syslogUDP,
 			SyslogTCP:  *syslogTCP,
+			SyslogTLS:  *syslogTLS,
 			HTTPIngest: *httpAddr,
 			InboxDir:   *inboxDir,
 			DBPath:     *dbPath,
@@ -368,9 +503,15 @@ func main() {
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
 		uiServer.SetIngestTracker(mgr)
-		connMgr := connections.NewManager(*connsDir)
-		_ = connMgr.LoadDir(*connsDir)
-		uiServer.SetConnManager(connMgr, *connsDir)
+		connMgr := connections.NewManager(*sinksDir)
+		connMgr.SetResourceDirs(*sourcesDir, *sinksDir)
+		if *sourcesDir != "" {
+			_ = connMgr.LoadDir(*sourcesDir)
+		}
+		if *sinksDir != "" {
+			_ = connMgr.LoadDir(*sinksDir)
+		}
+		uiServer.SetConnManager(connMgr, *sinksDir)
 		if err := uiServer.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
 		} else {
