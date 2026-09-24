@@ -31,8 +31,18 @@ func (j *JSONDecoder) Detect(raw []byte) float64 {
 		return 0.95
 	}
 	if trimmed[0] == '[' {
-		// JSON Array
-		return 0.90
+		if len(trimmed) > 1 && trimmed[len(trimmed)-1] == ']' {
+			inner := bytes.TrimSpace(trimmed[1:])
+			if len(inner) > 0 {
+				first := inner[0]
+				if first == '{' || first == '"' || first == '[' || first == ']' ||
+					(first >= '0' && first <= '9') || first == '-' ||
+					first == 't' || first == 'f' || first == 'n' {
+					return 0.90
+				}
+			}
+		}
+		return 0.0
 	}
 
 	return 0.0
@@ -82,8 +92,23 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		return records, nil
 	}
 
-	// 2. Multi-line NDJSON vs Single Object
-	// Check if there are multiple lines that start with '{'
+	// 2. Single JSON Object (handles single-line or multi-line formatted JSON)
+	var singleFields map[string]any
+	if err := json.Unmarshal(trimmed, &singleFields); err == nil {
+		if len(singleFields) > MaxFields {
+			return nil, fmt.Errorf("JSON object exceeds maximum fields limit %d (got %d)", MaxFields, len(singleFields))
+		}
+		record := &model.DecodedRecord{
+			RecordOrdinal: 0,
+			Format:        "json",
+			Headers:       map[string]any{},
+			Fields:        singleFields,
+			RawPayload:    trimmed,
+		}
+		return []*model.DecodedRecord{record}, nil
+	}
+
+	// 3. Multi-line NDJSON
 	if bytes.Contains(trimmed, []byte("\n")) {
 		var records []*model.DecodedRecord
 		scanner := bufio.NewScanner(bytes.NewReader(trimmed))
@@ -101,14 +126,12 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 
 			var fields map[string]any
 			if err := json.Unmarshal(line, &fields); err != nil {
-				// If a multi-line document has non-JSON lines, fail parsing
 				return nil, fmt.Errorf("malformed NDJSON line at ordinal %d: %w", ordinal, err)
 			}
 			if len(fields) > MaxFields {
 				return nil, fmt.Errorf("NDJSON object at ordinal %d exceeds maximum fields limit %d (got %d)", ordinal, MaxFields, len(fields))
 			}
 
-			// Copy line bytes
 			lineBytes := make([]byte, len(line))
 			copy(lineBytes, line)
 
@@ -131,22 +154,5 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		}
 	}
 
-	// 3. Single JSON Object
-	var fields map[string]any
-	if err := json.Unmarshal(trimmed, &fields); err != nil {
-		return nil, fmt.Errorf("malformed JSON object: %w", err)
-	}
-	if len(fields) > MaxFields {
-		return nil, fmt.Errorf("JSON object exceeds maximum fields limit %d (got %d)", MaxFields, len(fields))
-	}
-
-	record := &model.DecodedRecord{
-		RecordOrdinal: 0,
-		Format:        "json",
-		Headers:       map[string]any{},
-		Fields:        fields,
-		RawPayload:    trimmed,
-	}
-
-	return []*model.DecodedRecord{record}, nil
+	return nil, fmt.Errorf("malformed JSON object: %w", json.Unmarshal(trimmed, &singleFields))
 }

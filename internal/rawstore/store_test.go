@@ -438,4 +438,3 @@ func TestBatchChildrenAndSourcePort(t *testing.T) {
 		t.Errorf("expected RecordOrdinal 2, got %d", gotQ.RecordOrdinal)
 	}
 }
-

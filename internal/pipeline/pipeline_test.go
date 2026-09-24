@@ -346,4 +346,3 @@ func TestEmptyBatchAccounting_BA004(t *testing.T) {
 		t.Errorf("expected 1 quarantine entry with reason empty_payload, got %+v", qList)
 	}
 }
-

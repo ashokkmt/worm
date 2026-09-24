@@ -389,6 +389,233 @@ func TestTextDecoder_Malformed(t *testing.T) {
 	}
 }
 
+func TestXMLDecoder_Single(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/xml/valid_single.xml")
+	decoder := NewXMLDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.90 {
+		t.Errorf("expected XML confidence >= 0.90, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.Format != "xml" {
+		t.Errorf("expected format xml, got %s", rec.Format)
+	}
+	if rec.Headers["xml_root_local"] != "event" {
+		t.Errorf("expected xml_root_local=event, got %v", rec.Headers["xml_root_local"])
+	}
+	if rec.Headers["@id"] != "evt-1001" {
+		t.Errorf("expected @id=evt-1001, got %v", rec.Headers["@id"])
+	}
+	if rec.Fields["source_ip"] != "192.168.1.100" {
+		t.Errorf("expected source_ip=192.168.1.100, got %v", rec.Fields["source_ip"])
+	}
+	if rec.Fields["action"] != "allow" {
+		t.Errorf("expected action=allow, got %v", rec.Fields["action"])
+	}
+
+	// Verify nested details map
+	details, ok := rec.Fields["details"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected details to be map[string]any, got %T", rec.Fields["details"])
+	}
+	if details["protocol"] != "TCP" {
+		t.Errorf("expected protocol=TCP, got %v", details["protocol"])
+	}
+}
+
+func TestXMLDecoder_Batch(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/xml/valid_batch.xml")
+	decoder := NewXMLDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.90 {
+		t.Errorf("expected XML confidence >= 0.90, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 2 {
+		t.Fatalf("expected 2 batch records, got %d", len(records))
+	}
+
+	if records[0].RecordOrdinal != 0 || records[1].RecordOrdinal != 1 {
+		t.Errorf("expected ordinals 0 and 1, got %d and %d", records[0].RecordOrdinal, records[1].RecordOrdinal)
+	}
+	if records[0].Fields["src"] != "10.1.1.1" || records[0].Fields["action"] != "block" {
+		t.Errorf("unexpected record 0 fields: %v", records[0].Fields)
+	}
+	if records[1].Fields["src"] != "10.1.1.2" || records[1].Fields["action"] != "allow" {
+		t.Errorf("unexpected record 1 fields: %v", records[1].Fields)
+	}
+}
+
+func TestXMLDecoder_MalformedAndSecurity(t *testing.T) {
+	decoder := NewXMLDecoder()
+
+	// Malformed unclosed XML
+	unclosed := loadFixture(t, "testdata/formats/xml/malformed_unclosed.xml")
+	_, err := decoder.Decode(unclosed)
+	if err == nil {
+		t.Errorf("expected error decoding unclosed XML, got nil")
+	}
+
+	// XXE rejection
+	xxe := loadFixture(t, "testdata/formats/xml/malformed_xxe.xml")
+	_, err = decoder.Decode(xxe)
+	if err == nil {
+		t.Errorf("expected error decoding XML with DOCTYPE/ENTITY directive, got nil")
+	}
+}
+
+func TestLEEFDecoder_LEEF1(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/leef/valid_leef1.txt")
+	decoder := NewLEEFDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.90 {
+		t.Errorf("expected LEEF confidence >= 0.90, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.Format != "leef" {
+		t.Errorf("expected format leef, got %s", rec.Format)
+	}
+	if rec.Headers["leef_version"] != "1.0" {
+		t.Errorf("expected leef_version=1.0, got %v", rec.Headers["leef_version"])
+	}
+	if rec.Headers["vendor"] != "Microsoft" {
+		t.Errorf("expected vendor=Microsoft, got %v", rec.Headers["vendor"])
+	}
+	if rec.Headers["product"] != "MSExchange" {
+		t.Errorf("expected product=MSExchange, got %v", rec.Headers["product"])
+	}
+	if rec.Headers["event_id"] != "4001" {
+		t.Errorf("expected event_id=4001, got %v", rec.Headers["event_id"])
+	}
+	if rec.Fields["src"] != "192.168.1.50" {
+		t.Errorf("expected src=192.168.1.50, got %v", rec.Fields["src"])
+	}
+	if rec.Fields["usrName"] != "alice" {
+		t.Errorf("expected usrName=alice, got %v", rec.Fields["usrName"])
+	}
+}
+
+func TestLEEFDecoder_LEEF2_CustomDelim(t *testing.T) {
+	fixture := loadFixture(t, "testdata/formats/leef/valid_leef2_custom_delim.txt")
+	decoder := NewLEEFDecoder()
+
+	conf := decoder.Detect(fixture)
+	if conf < 0.90 {
+		t.Errorf("expected LEEF confidence >= 0.90, got %f", conf)
+	}
+
+	records, err := decoder.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	if rec.Headers["leef_version"] != "2.0" {
+		t.Errorf("expected leef_version=2.0, got %v", rec.Headers["leef_version"])
+	}
+	if rec.Fields["src"] != "10.0.1.20" {
+		t.Errorf("expected src=10.0.1.20, got %v", rec.Fields["src"])
+	}
+	if rec.Fields["msg"] != "Packet dropped by policy" {
+		t.Errorf("expected msg='Packet dropped by policy', got %v", rec.Fields["msg"])
+	}
+}
+
+func TestLEEFDecoder_DuplicatesAndMalformed(t *testing.T) {
+	decoder := NewLEEFDecoder()
+
+	// Duplicate keys deterministic preservation
+	dup := []byte("LEEF:2.0|Vendor|Product|1.0|Evt|^|tag=alpha^tag=beta^tag=gamma")
+	recs, err := decoder.Decode(dup)
+	if err != nil {
+		t.Fatalf("Decode duplicate keys failed: %v", err)
+	}
+	tags, ok := recs[0].Fields["tag"].([]any)
+	if !ok || len(tags) != 3 {
+		t.Fatalf("expected 3 preserved duplicate values in slice, got %v", recs[0].Fields["tag"])
+	}
+	if tags[0] != "alpha" || tags[1] != "beta" || tags[2] != "gamma" {
+		t.Errorf("unexpected duplicates order: %v", tags)
+	}
+
+	// Malformed version
+	mal := loadFixture(t, "testdata/formats/leef/malformed_version.txt")
+	_, err = decoder.Decode(mal)
+	if err == nil {
+		t.Errorf("expected error for unsupported LEEF version, got nil")
+	}
+}
+
+func TestLayeredSyslog_LEEFAndCEF(t *testing.T) {
+	// Syslog RFC 5424 wrapping LEEF 2.0 with hex delimiter x5E (^)
+	fixture := loadFixture(t, "testdata/formats/leef/valid_leef_syslog.txt")
+	syslogDec := NewSyslogDecoder()
+
+	records, err := syslogDec.Decode(fixture)
+	if err != nil {
+		t.Fatalf("Decode layered syslog LEEF failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected 1 record, got %d", len(records))
+	}
+
+	rec := records[0]
+	// Inner format detected
+	if rec.Format != "leef" {
+		t.Errorf("expected layered format leef, got %s", rec.Format)
+	}
+	// Outer envelope preserved in headers
+	if rec.Headers["syslog_envelope"] != "syslog_rfc5424" {
+		t.Errorf("expected syslog_envelope=syslog_rfc5424, got %v", rec.Headers["syslog_envelope"])
+	}
+	if rec.Headers["syslog_host"] != "iam-gateway" {
+		t.Errorf("expected syslog_host=iam-gateway, got %v", rec.Headers["syslog_host"])
+	}
+	// Inner fields decoded
+	if rec.Fields["usrName"] != "admin" {
+		t.Errorf("expected usrName=admin, got %v", rec.Fields["usrName"])
+	}
+	if rec.Fields["reason"] != "Bad credentials" {
+		t.Errorf("expected reason='Bad credentials', got %v", rec.Fields["reason"])
+	}
+	// Exact raw payload preserved
+	if string(rec.RawPayload) != string(fixture) {
+		t.Errorf("raw payload mismatch with original syslog envelope")
+	}
+}
+
 func TestRegistryAutoDetection(t *testing.T) {
 	registry := DefaultRegistry()
 
@@ -405,6 +632,10 @@ func TestRegistryAutoDetection(t *testing.T) {
 		{"JSON Array", "testdata/formats/json/valid_array.json", "json", 2},
 		{"CSV", "testdata/formats/csv/valid_headers.csv", "csv", 3},
 		{"CEF", "testdata/formats/cef/valid_alert.txt", "cef", 1},
+		{"XML Single", "testdata/formats/xml/valid_single.xml", "xml", 1},
+		{"XML Batch", "testdata/formats/xml/valid_batch.xml", "xml", 2},
+		{"LEEF 1.0", "testdata/formats/leef/valid_leef1.txt", "leef", 1},
+		{"LEEF 2.0", "testdata/formats/leef/valid_leef2_custom_delim.txt", "leef", 1},
 		{"Text CLF", "testdata/formats/text/valid_combined_log.txt", "text", 1},
 	}
 
@@ -431,8 +662,8 @@ type MockAmbiguousDecoder struct {
 	score float64
 }
 
-func (m *MockAmbiguousDecoder) Name() string                     { return m.name }
-func (m *MockAmbiguousDecoder) Detect(raw []byte) float64        { return m.score }
+func (m *MockAmbiguousDecoder) Name() string              { return m.name }
+func (m *MockAmbiguousDecoder) Detect(raw []byte) float64 { return m.score }
 func (m *MockAmbiguousDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	return []*model.DecodedRecord{{Format: m.name}}, nil
 }

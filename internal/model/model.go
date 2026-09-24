@@ -41,21 +41,21 @@ type RawEvent struct {
 
 // ProcessingStep represents a single stage execution record in the event's audit trail.
 type ProcessingStep struct {
-	Stage     string    `json:"stage"`               // e.g. "raw_commit", "format_detect", "decode", "parser_match", "normalize"
-	Timestamp time.Time `json:"timestamp"`           // timestamp when stage completed
-	Result    string    `json:"result"`              // e.g. "ok", "syslog_rfc5424", "network-device-firewall@1.0.0"
-	Error     string    `json:"error,omitempty"`     // error message if stage failed
+	Stage     string    `json:"stage"`           // e.g. "raw_commit", "format_detect", "decode", "parser_match", "normalize"
+	Timestamp time.Time `json:"timestamp"`       // timestamp when stage completed
+	Result    string    `json:"result"`          // e.g. "ok", "syslog_rfc5424", "network-device-firewall@1.0.0"
+	Error     string    `json:"error,omitempty"` // error message if stage failed
 }
 
 // DecodedRecord represents an intermediate syntax tree produced by a format decoder
 // (Syslog, JSON, CSV, CEF, Text) before semantic mapping.
 type DecodedRecord struct {
-	RawID          string         `json:"raw_id"`
-	RecordOrdinal  int            `json:"record_ordinal"` // 0 for single, 0..N for batch child records
-	Format         string         `json:"format"`         // e.g. "syslog_rfc5424", "json", "csv", "cef"
-	Headers        map[string]any `json:"headers"`        // wire-level envelope metadata (e.g. syslog facility/severity)
-	Fields         map[string]any `json:"fields"`         // key-value pairs decoded from payload
-	RawPayload     []byte         `json:"raw_payload"`    // raw bytes of this specific record
+	RawID         string         `json:"raw_id"`
+	RecordOrdinal int            `json:"record_ordinal"` // 0 for single, 0..N for batch child records
+	Format        string         `json:"format"`         // e.g. "syslog_rfc5424", "json", "csv", "cef"
+	Headers       map[string]any `json:"headers"`        // wire-level envelope metadata (e.g. syslog facility/severity)
+	Fields        map[string]any `json:"fields"`         // key-value pairs decoded from payload
+	RawPayload    []byte         `json:"raw_payload"`    // raw bytes of this specific record
 }
 
 // WormEnvelope contains the mandatory provenance, cryptographic lineage, and schema metadata.

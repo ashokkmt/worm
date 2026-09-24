@@ -16,7 +16,7 @@ type IngestAdapter interface {
 
 // Manager coordinates multiple ingestion adapters, routing records to a single channel.
 type Manager struct {
-	mu       sync.Mutex
+	mu          sync.Mutex
 	adapters    []IngestAdapter
 	adapterErrs map[string]error
 	out         chan model.IngestedRecord
