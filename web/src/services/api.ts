@@ -29,6 +29,21 @@ async function fetchJSON<T>(endpoint: string, options?: RequestInit): Promise<T>
   return res.json();
 }
 
+async function fetchText(endpoint: string, options?: RequestInit): Promise<string> {
+  const res = await fetch(`${BASE_URL}${endpoint}`, options);
+  if (!res.ok) {
+    let errMessage = `HTTP ${res.status}: ${res.statusText}`;
+    try {
+      const errObj = await res.json();
+      if (errObj.error) errMessage = errObj.error;
+    } catch {
+      // ignore
+    }
+    throw new Error(errMessage);
+  }
+  return res.text();
+}
+
 export const apiService = {
   getHealth: () => fetchJSON<HealthStatus>('/health'),
   getStats: () => fetchJSON<SystemStats>('/stats'),
@@ -113,7 +128,7 @@ export const apiService = {
   getConfig: () => fetchJSON<RuntimeConfig>('/config'),
 
   listConnections: () => fetchJSON<{ connections: ConnectionSummary[] }>('/connections'),
-  getConnection: (name: string) => fetchJSON<any>(`/connections/${encodeURIComponent(name)}`),
+  getConnection: (name: string) => fetchText(`/connections/${encodeURIComponent(name)}`),
   validateConnection: (yamlContent: string) =>
     fetchJSON<ConnectionValidationResponse>('/connections/validate', {
       method: 'POST',

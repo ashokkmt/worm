@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -177,9 +178,9 @@ func (s *DatabaseSimulator) Generate(scenario string, ts time.Time, rng *rand.Ra
 }
 
 func main() {
-	sourceFlag := flag.String("source", "all", "Source: firewall|asa|sshd|ids|webserver|app|database|all")
+	sourceFlag := flag.String("source", "all", "Source: firewall|asa|sshd|ids|webserver|app|database|all|mixed")
 	scenarioFlag := flag.String("scenario", "all", "Scenario: normal|bruteforce|scan|malformed|mixed|all")
-	formatFlag := flag.String("format", "stdout", "Output format: stdout|syslog-udp|syslog-tcp|http-post|file")
+	formatFlag := flag.String("format", "stdout", "Output format: stdout|syslog-udp|syslog-tcp|syslog-tls|http-post|file")
 	targetFlag := flag.String("target", "127.0.0.1:514", "Network target address or URL (e.g. 127.0.0.1:514 or http://127.0.0.1:8080/api/v1/ingest)")
 	outputDir := flag.String("output-dir", "simulated", "Output directory when format=file")
 	rateFlag := flag.Float64("rate", 10.0, "Events per second (0 = burst as fast as possible)")
@@ -206,7 +207,7 @@ func main() {
 	}
 
 	var activeSimulators []SourceSimulator
-	if *sourceFlag == "all" {
+	if *sourceFlag == "all" || *sourceFlag == "mixed" {
 		activeSimulators = allSimulators
 	} else {
 		for _, s := range allSimulators {
@@ -245,6 +246,15 @@ func main() {
 			os.Exit(1)
 		}
 		defer tcpConn.Close()
+	} else if *formatFlag == "syslog-tls" {
+		tlsCfg := &tls.Config{InsecureSkipVerify: true}
+		tlsConn, err := tls.Dial("tcp", *targetFlag, tlsCfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to connect to TLS target %s: %v\n", *targetFlag, err)
+			os.Exit(1)
+		}
+		defer tlsConn.Close()
+		tcpConn = tlsConn
 	} else if *formatFlag == "file" {
 		_ = os.MkdirAll(*outputDir, 0755)
 	}
@@ -287,7 +297,7 @@ func main() {
 			_, sendErr = fmt.Println(string(payload))
 		case "syslog-udp":
 			_, sendErr = udpConn.Write(payload)
-		case "syslog-tcp":
+		case "syslog-tcp", "syslog-tls":
 			_, sendErr = fmt.Fprintf(tcpConn, "%s\n", string(payload))
 		case "http-post":
 			resp, httpErr := http.Post(*targetFlag, "application/json", bytes.NewReader(payload))

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"worm/internal/connections"
+	"worm/internal/decode"
 	"worm/internal/packs"
 	"worm/internal/rawstore"
 )
@@ -119,13 +120,14 @@ func RunDaemonMode(pidFile, logFile string, uiAddr string) {
 	fmt.Printf("  * Management UI:   %s\n", GetBaseURL(uiAddr))
 	fmt.Printf("  * Logging Stream:  %s\n", logFile)
 	fmt.Printf("  * Quick Commands:\n")
-	fmt.Printf("      ./bin/worm -packs                  # List active parser packs\n")
-	fmt.Printf("      ./bin/worm -pack <name>            # View pack YAML\n")
-	fmt.Printf("      ./bin/worm -packs -f <pack.yaml>   # Install & reconcile new pack\n")
-	fmt.Printf("      ./bin/worm -replay                 # View quarantined DLQ records\n")
-	fmt.Printf("      ./bin/worm -replay all             # Replay all quarantined records\n")
-	fmt.Printf("      ./bin/worm -status                 # Check daemon status\n")
-	fmt.Printf("      ./bin/worm -stop                   # Stop the background daemon\n\n")
+	fmt.Printf("      ./bin/worm packs list              # List active parser packs\n")
+	fmt.Printf("      ./bin/worm packs get <name>        # View pack YAML definition\n")
+	fmt.Printf("      ./bin/worm packs apply <pack.yaml> # Install & reconcile new pack\n")
+	fmt.Printf("      ./bin/worm sources list            # List active ingestion sources\n")
+	fmt.Printf("      ./bin/worm sinks list              # List active delivery sinks\n")
+	fmt.Printf("      ./bin/worm replay [id|all]         # Manage or replay quarantined DLQ records\n")
+	fmt.Printf("      ./bin/worm status                  # Check background daemon health\n")
+	fmt.Printf("      ./bin/worm stop                    # Stop the background daemon\n\n")
 	os.Exit(0)
 }
 
@@ -478,202 +480,398 @@ func ReplayAllCLI(uiAddr string) {
 	fmt.Printf("-------------------------------\n\n")
 }
 
-func ListConnectionsCLI(uiAddr, connDir string) {
-	baseURL := GetBaseURL(uiAddr)
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(baseURL + "/api/v1/connections")
+// --- Parser Packs CLI (kind: ParserPack) ---
 
-	var connList []*connections.Connection
-	sourceDesc := "Runtime (" + baseURL + ")"
+func GetPackCLI(packName, uiAddr, packsDir string) {
+	ViewPackCLI(packName, uiAddr, packsDir)
+}
 
-	if err == nil && resp.StatusCode == http.StatusOK {
-		var result struct {
-			Connections []*connections.Connection `json:"connections"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-			connList = result.Connections
-		}
-		resp.Body.Close()
-	} else {
-		// Fallback to disk
-		sourceDesc = "Local Directory (" + connDir + ")"
-		mgr := connections.NewManager(connDir)
-		_ = mgr.LoadDir(connDir)
-		connList = mgr.List()
+func ValidatePackCLI(filePath string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		os.Exit(1)
 	}
 
-	fmt.Printf("\n--- Active Connections [%s] ---\n", sourceDesc)
-	if len(connList) == 0 {
-		fmt.Println("No connections found.")
-		fmt.Printf("--------------------------------------------------\n\n")
+	pack, err := packs.LoadPack(bytes.NewReader(data))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "PACK VALIDATION FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[WORM] Parser Pack YAML is VALID!\n")
+	fmt.Printf("  * Kind:     ParserPack\n")
+	fmt.Printf("  * Name:     %s\n", pack.Metadata.Name)
+	fmt.Printf("  * Version:  %s\n", pack.Metadata.Version)
+	fmt.Printf("  * Category: %s\n", pack.Spec.SourceCategory)
+	fmt.Printf("  * Format:   %s\n", pack.Spec.Format)
+	fmt.Printf("  * Mappings: %d field mappings defined\n\n", len(pack.Spec.Fields))
+}
+
+func TestPackCLI(filePath, sample string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		os.Exit(1)
+	}
+
+	pack, err := packs.LoadPack(bytes.NewReader(data))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "PACK VALIDATION FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[WORM] Testing Parser Pack %q v%s (%s / %s)...\n", pack.Metadata.Name, pack.Metadata.Version, pack.Spec.SourceCategory, pack.Spec.Format)
+
+	var sampleBytes []byte
+	if sample != "" {
+		if fileData, err := os.ReadFile(sample); err == nil {
+			sampleBytes = fileData
+		} else {
+			sampleBytes = []byte(sample)
+		}
+	} else {
+		fmt.Printf("[WORM] Pack schema & syntax test PASSED!\n")
+		fmt.Printf("  * Pass '-sample <sample_log_or_file>' to execute matching & OCSF extraction tests.\n\n")
 		return
 	}
 
-	fmt.Printf("%-24s %-10s %-16s %-8s %s\n", "NAME", "VERSION", "TYPE", "ENABLED", "TARGET")
+	reg := decode.DefaultRegistry()
+	_, decodedRecords, err := reg.DetectAndDecode(sampleBytes)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "DECODER ERROR on sample: %v\n", err)
+		os.Exit(1)
+	}
+	if len(decodedRecords) == 0 {
+		fmt.Fprintf(os.Stderr, "NO RECORDS DECODED from sample\n")
+		os.Exit(1)
+	}
+
+	decRec := decodedRecords[0]
+	matched := pack.Matches(decRec)
+	if !matched {
+		fmt.Fprintf(os.Stderr, "PACK MATCH RESULT: FALSE (Sample did not match criteria)\n")
+		os.Exit(1)
+	}
+
+	extracted, unmapped, warnings, err := packs.ExtractAndConvert(pack, decRec)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "EXTRACTION ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[WORM] Pack Test PASSED!\n")
+	fmt.Printf("  * Match:     TRUE\n")
+	fmt.Printf("  * Extracted: %d OCSF fields\n", len(extracted))
+	for k, v := range extracted {
+		fmt.Printf("    - %s: %v\n", k, v)
+	}
+	if len(warnings) > 0 {
+		fmt.Printf("  * Warnings:  %s\n", strings.Join(warnings, ", "))
+	}
+	if len(unmapped) > 0 {
+		fmt.Printf("  * Unmapped:  %d fields preserved in unmapped\n", len(unmapped))
+	}
+	fmt.Println()
+}
+
+func RollbackPackCLI(uiAddr, packsDir string) {
+	baseURL := GetBaseURL(uiAddr)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	resp, err := client.Post(baseURL+"/api/v1/packs/rollback", "application/json", nil)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		var res struct {
+			Status  string `json:"status"`
+			Version string `json:"version"`
+		}
+		_ = json.NewDecoder(resp.Body).Decode(&res)
+		resp.Body.Close()
+		fmt.Printf("\n[WORM] Parser Pack Rollback Successful!\n")
+		fmt.Printf("  * Active Runtime Snapshot: %s\n\n", res.Version)
+		return
+	}
+	if resp != nil {
+		resp.Body.Close()
+	}
+
+	// Fallback to local snapshot manager if server offline
+	snap, err := packs.LoadDir(packsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to load packs directory: %v\n", err)
+		os.Exit(1)
+	}
+	mgr := packs.NewSnapshotManager(snap)
+	mgr.SetPacksDir(packsDir)
+	if err := mgr.Rollback(); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: pack rollback failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\n[WORM] Parser Pack Local Rollback Successful!\n\n")
+}
+
+// --- Sources CLI (kind: Source) ---
+
+func ListSourcesCLI(uiAddr, srcDir string) {
+	if srcDir == "" {
+		srcDir = "sources"
+	}
+	mgr := connections.NewManager(srcDir)
+	_ = mgr.LoadDir(srcDir)
+	list := mgr.List()
+
+	fmt.Printf("\n--- Active Ingestion Sources [Directory (%s)] ---\n", srcDir)
+	fmt.Printf("%-24s %-10s %-16s %-8s %s\n", "NAME", "VERSION", "TYPE", "ENABLED", "TARGET ENDPOINT / TOPIC")
 	fmt.Println(strings.Repeat("-", 80))
-	for _, c := range connList {
-		target := ""
-		switch c.Spec.Type {
-		case "http_output", "cloud_pull":
-			if c.Spec.Endpoint != nil {
-				target = c.Spec.Endpoint.URL
-			}
-		case "kafka_output":
+	for _, c := range list {
+		target := "-"
+		if c.Spec.Endpoint != nil && c.Spec.Endpoint.URL != "" {
+			target = c.Spec.Endpoint.URL
+		} else if c.Spec.Topic != "" {
 			target = fmt.Sprintf("topic:%s brokers:%s", c.Spec.Topic, strings.Join(c.Spec.Brokers, ","))
-		case "kafka_input":
-			target = fmt.Sprintf("topics:%s", strings.Join(c.Spec.Topics, ","))
-		case "parquet_output", "ndjson_output":
-			target = c.Spec.Path
 		}
 		if len(target) > 30 {
 			target = target[:27] + "..."
 		}
 		fmt.Printf("%-24s %-10s %-16s %-8v %s\n", c.Metadata.Name, c.Metadata.Version, c.Spec.Type, c.Spec.Enabled, target)
 	}
-	fmt.Printf("--------------------------------------------------------------------------------\n\n")
+	fmt.Printf("%s\n\n", strings.Repeat("-", 80))
 }
 
-func GetConnectionCLI(name, uiAddr, connDir string) {
-	baseURL := GetBaseURL(uiAddr)
-	client := &http.Client{Timeout: 2 * time.Second}
-	resp, err := client.Get(baseURL + "/api/v1/connections/" + name)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		var c connections.Connection
-		if err := json.NewDecoder(resp.Body).Decode(&c); err == nil {
-			resp.Body.Close()
-			data, _ := json.MarshalIndent(c, "", "  ")
-			fmt.Println(string(data))
-			return
-		}
-		resp.Body.Close()
+func GetSourceCLI(name, uiAddr, srcDir string) {
+	if srcDir == "" {
+		srcDir = "sources"
 	}
-
-	// Fallback to disk
-	mgr := connections.NewManager(connDir)
-	_ = mgr.LoadDir(connDir)
+	mgr := connections.NewManager(srcDir)
+	_ = mgr.LoadDir(srcDir)
 	c, err := mgr.Get(name)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: connection %q not found\n", name)
+		fmt.Fprintf(os.Stderr, "ERROR: source %q not found in %s\n", name, srcDir)
 		os.Exit(1)
 	}
 	data, _ := json.MarshalIndent(c, "", "  ")
 	fmt.Println(string(data))
 }
 
-func ValidateConnectionCLI(filePath string) {
+func ValidateSourceCLI(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
 		os.Exit(1)
 	}
 
-	conn, err := connections.LoadConnection(strings.NewReader(string(data)))
+	src, err := connections.LoadSource(strings.NewReader(string(data)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "VALIDATION FAILED: %v\n", err)
+		fmt.Fprintf(os.Stderr, "SOURCE VALIDATION FAILED: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n[WORM] Connection YAML is VALID!\n")
-	fmt.Printf("  * Name:    %s\n", conn.Metadata.Name)
-	fmt.Printf("  * Version: %s\n", conn.Metadata.Version)
-	fmt.Printf("  * Type:    %s\n", conn.Spec.Type)
-	fmt.Printf("  * Enabled: %v\n\n", conn.Spec.Enabled)
+	fmt.Printf("\n[WORM] Source YAML is VALID!\n")
+	fmt.Printf("  * Kind:    %s\n", src.Kind)
+	fmt.Printf("  * Name:    %s\n", src.Metadata.Name)
+	fmt.Printf("  * Version: %s\n", src.Metadata.Version)
+	fmt.Printf("  * Type:    %s\n", src.Spec.Type)
+	fmt.Printf("  * Enabled: %v\n\n", src.Spec.Enabled)
 }
 
-func TestConnectionCLI(filePath string) {
+func TestSourceCLI(filePath string) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
 		os.Exit(1)
 	}
 
-	conn, err := connections.LoadConnection(strings.NewReader(string(data)))
+	src, err := connections.LoadSource(strings.NewReader(string(data)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "VALIDATION FAILED: %v\n", err)
+		fmt.Fprintf(os.Stderr, "SOURCE VALIDATION FAILED: %v\n", err)
 		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := conn.TestConnectivity(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "CONNECTIVITY TEST FAILED: %v\n", err)
+	if err := src.TestConnectivity(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "SOURCE CONNECTIVITY TEST FAILED: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n[WORM] Connectivity Test PASSED for %q (%s)\n\n", conn.Metadata.Name, conn.Spec.Type)
+	fmt.Printf("\n[WORM] Source Connectivity Test PASSED for %q (%s)\n\n", src.Metadata.Name, src.Spec.Type)
 }
 
-func ApplyConnectionCLI(filePath, uiAddr, connDir string) {
+func ApplySourceCLI(filePath, uiAddr, srcDir string) {
+	if srcDir == "" {
+		srcDir = "sources"
+	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
 		os.Exit(1)
 	}
 
-	// 1. Pre-validate locally
-	conn, err := connections.LoadConnection(strings.NewReader(string(data)))
+	_, err = connections.LoadSource(strings.NewReader(string(data)))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "VALIDATION FAILED: %v\n", err)
+		fmt.Fprintf(os.Stderr, "SOURCE VALIDATION FAILED: %v\n", err)
 		os.Exit(1)
 	}
 
-	baseURL := GetBaseURL(uiAddr)
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	reqPayload, _ := json.Marshal(map[string]string{
-		"filename":     filepath.Base(filePath),
-		"yaml_content": string(data),
-	})
-
-	resp, err := client.Post(baseURL+"/api/v1/connections/apply", "application/json", bytes.NewReader(reqPayload))
-	if err == nil && resp.StatusCode == http.StatusOK {
-		resp.Body.Close()
-		fmt.Printf("\n[WORM] Connection Applied Successfully to Runtime & Disk!\n")
-		fmt.Printf("  * Name:    %s\n", conn.Metadata.Name)
-		fmt.Printf("  * Version: %s\n", conn.Metadata.Version)
-		fmt.Printf("  * Type:    %s\n\n", conn.Spec.Type)
-		return
-	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-
-	// Fallback to local apply via manager if server offline
-	mgr := connections.NewManager(connDir)
-	_ = mgr.LoadDir(connDir)
+	mgr := connections.NewManager(srcDir)
+	_ = mgr.LoadDir(srcDir)
 	applied, err := mgr.ApplyFile(filepath.Base(filePath), data)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to apply connection: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ERROR: failed to apply source: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("\n[WORM] Connection Applied to Local Disk!\n")
+	fmt.Printf("\n[WORM] Source Applied Successfully!\n")
+	fmt.Printf("  * Kind:    %s\n", applied.Kind)
 	fmt.Printf("  * Name:    %s\n", applied.Metadata.Name)
 	fmt.Printf("  * Version: %s\n", applied.Metadata.Version)
 	fmt.Printf("  * Type:    %s\n\n", applied.Spec.Type)
 }
 
-func RollbackConnectionCLI(uiAddr, connDir string) {
-	baseURL := GetBaseURL(uiAddr)
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Post(baseURL+"/api/v1/connections/rollback", "application/json", nil)
-	if err == nil && resp.StatusCode == http.StatusOK {
-		resp.Body.Close()
-		fmt.Printf("\n[WORM] Connection Rollback Successful!\n\n")
-		return
+func RollbackSourceCLI(uiAddr, srcDir string) {
+	if srcDir == "" {
+		srcDir = "sources"
 	}
-	if resp != nil {
-		resp.Body.Close()
-	}
-
-	// Fallback local manager
-	mgr := connections.NewManager(connDir)
-	_ = mgr.LoadDir(connDir)
+	mgr := connections.NewManager(srcDir)
+	_ = mgr.LoadDir(srcDir)
 	if err := mgr.Rollback(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: rollback failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ERROR: source rollback failed: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("\n[WORM] Connection Local Rollback Successful!\n\n")
+	fmt.Printf("\n[WORM] Source Rollback Successful!\n\n")
+}
+
+// --- Sinks CLI (kind: Sink) ---
+
+func ListSinksCLI(uiAddr, sinkDir string) {
+	if sinkDir == "" {
+		sinkDir = "sinks"
+	}
+	mgr := connections.NewManager(sinkDir)
+	_ = mgr.LoadDir(sinkDir)
+	list := mgr.List()
+
+	fmt.Printf("\n--- Active Delivery Sinks [Directory (%s)] ---\n", sinkDir)
+	fmt.Printf("%-24s %-10s %-16s %-8s %s\n", "NAME", "VERSION", "TYPE", "ENABLED", "TARGET ENDPOINT / PATH")
+	fmt.Println(strings.Repeat("-", 80))
+	for _, c := range list {
+		target := "-"
+		if c.Spec.Endpoint != nil && c.Spec.Endpoint.URL != "" {
+			target = c.Spec.Endpoint.URL
+		} else if c.Spec.Path != "" {
+			target = c.Spec.Path
+		} else if c.Spec.Topic != "" {
+			target = fmt.Sprintf("topic:%s brokers:%s", c.Spec.Topic, strings.Join(c.Spec.Brokers, ","))
+		}
+		if len(target) > 30 {
+			target = target[:27] + "..."
+		}
+		fmt.Printf("%-24s %-10s %-16s %-8v %s\n", c.Metadata.Name, c.Metadata.Version, c.Spec.Type, c.Spec.Enabled, target)
+	}
+	fmt.Printf("%s\n\n", strings.Repeat("-", 80))
+}
+
+func GetSinkCLI(name, uiAddr, sinkDir string) {
+	if sinkDir == "" {
+		sinkDir = "sinks"
+	}
+	mgr := connections.NewManager(sinkDir)
+	_ = mgr.LoadDir(sinkDir)
+	c, err := mgr.Get(name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: sink %q not found in %s\n", name, sinkDir)
+		os.Exit(1)
+	}
+	data, _ := json.MarshalIndent(c, "", "  ")
+	fmt.Println(string(data))
+}
+
+func ValidateSinkCLI(filePath string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		os.Exit(1)
+	}
+
+	snk, err := connections.LoadSink(strings.NewReader(string(data)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SINK VALIDATION FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[WORM] Sink YAML is VALID!\n")
+	fmt.Printf("  * Kind:    %s\n", snk.Kind)
+	fmt.Printf("  * Name:    %s\n", snk.Metadata.Name)
+	fmt.Printf("  * Version: %s\n", snk.Metadata.Version)
+	fmt.Printf("  * Type:    %s\n", snk.Spec.Type)
+	fmt.Printf("  * Enabled: %v\n\n", snk.Spec.Enabled)
+}
+
+func TestSinkCLI(filePath string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		os.Exit(1)
+	}
+
+	snk, err := connections.LoadSink(strings.NewReader(string(data)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SINK VALIDATION FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := snk.TestConnectivity(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "SINK CONNECTIVITY TEST FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[WORM] Sink Connectivity Test PASSED for %q (%s)\n\n", snk.Metadata.Name, snk.Spec.Type)
+}
+
+func ApplySinkCLI(filePath, uiAddr, sinkDir string) {
+	if sinkDir == "" {
+		sinkDir = "sinks"
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		os.Exit(1)
+	}
+
+	_, err = connections.LoadSink(strings.NewReader(string(data)))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "SINK VALIDATION FAILED: %v\n", err)
+		os.Exit(1)
+	}
+
+	mgr := connections.NewManager(sinkDir)
+	_ = mgr.LoadDir(sinkDir)
+	applied, err := mgr.ApplyFile(filepath.Base(filePath), data)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: failed to apply sink: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n[WORM] Sink Applied Successfully!\n")
+	fmt.Printf("  * Kind:    %s\n", applied.Kind)
+	fmt.Printf("  * Name:    %s\n", applied.Metadata.Name)
+	fmt.Printf("  * Version: %s\n", applied.Metadata.Version)
+	fmt.Printf("  * Type:    %s\n\n", applied.Spec.Type)
+}
+
+func RollbackSinkCLI(uiAddr, sinkDir string) {
+	if sinkDir == "" {
+		sinkDir = "sinks"
+	}
+	mgr := connections.NewManager(sinkDir)
+	_ = mgr.LoadDir(sinkDir)
+	if err := mgr.Rollback(); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: sink rollback failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\n[WORM] Sink Rollback Successful!\n\n")
 }

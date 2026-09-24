@@ -9,13 +9,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Manager coordinates the lifecycle, validation, atomic apply, and rollback of Connection resources.
 type Manager struct {
 	mu            sync.RWMutex
 	dir           string
+	sourcesDir    string
+	sinksDir      string
 	connections   map[string]*Connection
+	filePaths     map[string]string
 	previousState map[string]*Connection
 	backupFile    string
 	backupContent []byte
@@ -27,7 +32,16 @@ func NewManager(dir string) *Manager {
 	return &Manager{
 		dir:         dir,
 		connections: make(map[string]*Connection),
+		filePaths:   make(map[string]string),
 	}
+}
+
+// SetResourceDirs configures the dedicated directories for kind: Source and kind: Sink manifests.
+func (m *Manager) SetResourceDirs(sourcesDir, sinksDir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sourcesDir = sourcesDir
+	m.sinksDir = sinksDir
 }
 
 // LoadDir scans the configured directory and loads all valid connection YAML manifests.
@@ -35,14 +49,15 @@ func (m *Manager) LoadDir(dir string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if dir != "" {
-		m.dir = dir
+	targetDir := dir
+	if targetDir == "" {
+		targetDir = m.dir
 	}
-	if m.dir == "" {
+	if targetDir == "" {
 		return errors.New("connection directory not configured")
 	}
 
-	entries, err := os.ReadDir(m.dir)
+	entries, err := os.ReadDir(targetDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
@@ -50,7 +65,13 @@ func (m *Manager) LoadDir(dir string) error {
 		return fmt.Errorf("failed to read connections dir: %w", err)
 	}
 
-	conns := make(map[string]*Connection)
+	if m.connections == nil {
+		m.connections = make(map[string]*Connection)
+	}
+	if m.filePaths == nil {
+		m.filePaths = make(map[string]string)
+	}
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -60,7 +81,7 @@ func (m *Manager) LoadDir(dir string) error {
 			continue
 		}
 
-		filePath := filepath.Join(m.dir, name)
+		filePath := filepath.Join(targetDir, name)
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return fmt.Errorf("failed to read %s: %w", filePath, err)
@@ -70,10 +91,10 @@ func (m *Manager) LoadDir(dir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to load %s: %w", filePath, err)
 		}
-		conns[conn.Metadata.Name] = conn
+		m.connections[conn.Metadata.Name] = conn
+		m.filePaths[conn.Metadata.Name] = filePath
 	}
 
-	m.connections = conns
 	return nil
 }
 
@@ -90,6 +111,38 @@ func (m *Manager) List() []*Connection {
 		return list[i].Metadata.Name < list[j].Metadata.Name
 	})
 	return list
+}
+
+// ListSummaries returns flattened summaries for all active connections.
+func (m *Manager) ListSummaries() []ConnectionSummary {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	list := make([]ConnectionSummary, 0, len(m.connections))
+	for _, c := range m.connections {
+		list = append(list, c.Summary())
+	}
+	sort.Slice(list, func(i, j int) bool {
+		return list[i].Name < list[j].Name
+	})
+	return list
+}
+
+// GetRawYAML retrieves the raw YAML contents of a connection by name.
+func (m *Manager) GetRawYAML(name string) ([]byte, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if p, ok := m.filePaths[name]; ok && p != "" {
+		if data, err := os.ReadFile(p); err == nil {
+			return data, nil
+		}
+	}
+	conn, ok := m.connections[name]
+	if !ok {
+		return nil, fmt.Errorf("connection %q not found", name)
+	}
+	return yaml.Marshal(conn)
 }
 
 // Get finds an active connection by name.
@@ -120,11 +173,18 @@ func (m *Manager) ApplyFile(filename string, content []byte) (*Connection, error
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.dir == "" {
+	targetDir := m.dir
+	if candidate.Kind == "Source" && m.sourcesDir != "" {
+		targetDir = m.sourcesDir
+	} else if candidate.Kind == "Sink" && m.sinksDir != "" {
+		targetDir = m.sinksDir
+	}
+
+	if targetDir == "" {
 		return nil, errors.New("connection directory not configured")
 	}
 
-	cleanBase := filepath.Clean(m.dir)
+	cleanBase := filepath.Clean(targetDir)
 	if strings.ContainsAny(filename, "/\\") || strings.Contains(filename, "..") {
 		return nil, errors.New("invalid filename: path traversal characters detected")
 	}
@@ -170,6 +230,10 @@ func (m *Manager) ApplyFile(filename string, content []byte) (*Connection, error
 	}
 
 	m.connections[candidate.Metadata.Name] = candidate
+	if m.filePaths == nil {
+		m.filePaths = make(map[string]string)
+	}
+	m.filePaths[candidate.Metadata.Name] = targetPath
 	return candidate, nil
 }
 

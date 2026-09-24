@@ -23,13 +23,13 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # 3. Simulates Linux SSHD / auth.log streaming Syslog TCP to local WORM (:1514)
+  # 3. Simulates Linux SSHD / auth.log streaming Syslog TCP to local WORM (:1601)
   sim-sshd:
     build:
       context: .
       dockerfile: docker/sim/Dockerfile
     container_name: sim-sshd
-    command: ["--source", "sshd", "--scenario", "bruteforce", "--format", "syslog-tcp", "--target", "host.docker.internal:1514", "--rate", "1", "--count", "0"]
+    command: ["--source", "sshd", "--scenario", "bruteforce", "--format", "syslog-tcp", "--target", "host.docker.internal:1601", "--rate", "1", "--count", "0"]
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -1,14 +1,14 @@
 apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: normalized-kafka
   version: 1.0.0
-  description: Normalized events Kafka producer sink
+  description: Kafka output topic for normalized OCSF events
 spec:
   type: kafka_output
   enabled: true
   brokers:
-    - "127.0.0.1:9092"
+    - kafka:9092
   topic: worm.normalized.v1
   key: worm.source_id
   acks: all

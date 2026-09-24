@@ -5,8 +5,42 @@ import { ConnectionSummary } from '../types/connection';
 import { apiService } from '../services/api';
 import { Badge } from '../components/Badge';
 
+const SAMPLE_SOURCE_PULL_YAML = `apiVersion: worm.io/v1
+kind: Source
+metadata:
+  name: aws-cloudtrail-pull
+  version: 1.0.0
+  description: REST pull poller for AWS CloudTrail audit logs
+spec:
+  type: cloud_pull
+  enabled: true
+  endpoint:
+    url: https://audit.us-east-1.cloud/logs
+    timeout: 10s
+    interval: 30s
+    batchSize: 100
+    watermarkPath: data/watermarks/cloudtrail.state
+    secretRef: aws-credentials
+`;
+
+const SAMPLE_SOURCE_KAFKA_YAML = `apiVersion: worm.io/v1
+kind: Source
+metadata:
+  name: raw-kafka-stream
+  version: 1.0.0
+  description: Kafka consumer group input adapter for raw event intake
+spec:
+  type: kafka_input
+  enabled: true
+  brokers:
+    - kafka:9092
+  topic: worm.raw.events
+  consumerGroup: worm-core-workers
+  secretRef: kafka-client-auth
+`;
+
 const SAMPLE_HTTP_YAML = `apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: siem-events
   version: 1.0.0
@@ -29,7 +63,7 @@ spec:
 `;
 
 const SAMPLE_KAFKA_YAML = `apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: normalized-kafka
   version: 1.0.0
@@ -50,7 +84,7 @@ spec:
 `;
 
 const SAMPLE_PARQUET_YAML = `apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: local-parquet-lake
   version: 1.0.0
@@ -117,12 +151,17 @@ export const Config: React.FC = () => {
     setActionStatus({ type: 'idle', message: '' });
     try {
       const res = await apiService.testConnection(selectedYaml);
+      const isOk = res.status === 'ok' || res.success === true;
+      const statusText = (res.status || (isOk ? 'ok' : 'failed')).toUpperCase();
+      const targetText = res.target ? ` (${res.target})` : '';
+      const messageText = res.message || res.error || (isOk ? 'TCP connectivity check passed' : 'Connectivity check failed');
+
       setActionStatus({
-        type: res.status === 'ok' ? 'success' : 'error',
-        message: `Connectivity check: [${res.status.toUpperCase()}] ${res.message} (${res.target})`,
+        type: isOk ? 'success' : 'error',
+        message: `Connectivity check [${statusText}]: ${messageText}${targetText}`,
       });
     } catch (e: any) {
-      setActionStatus({ type: 'error', message: e.message });
+      setActionStatus({ type: 'error', message: e.message || 'Connectivity check error' });
     } finally {
       setBusy(false);
     }
@@ -236,40 +275,56 @@ export const Config: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#21262d]">
-                    {connections.map((conn) => (
-                      <tr key={conn.name} className="hover:bg-[#0d1117]/50">
-                        <td className="py-2.5 font-bold text-[#f0f6fc]">{conn.name}</td>
-                        <td className="py-2.5 text-[#8b949e]">{conn.version}</td>
-                        <td className="py-2.5">
-                          <span className="px-2 py-0.5 rounded text-[11px] bg-[#21262d] text-[#58a6ff] border border-[#30363d]">
-                            {conn.type}
-                          </span>
-                        </td>
-                        <td className="py-2.5">
-                          {conn.enabled ? (
-                            <Badge variant="green">active</Badge>
-                          ) : (
-                            <Badge variant="amber">disabled</Badge>
-                          )}
-                        </td>
-                        <td className="py-2.5 text-[#c9d1d9] truncate max-w-xs">{conn.target}</td>
-                        <td className="py-2.5 text-right">
-                          <button
-                            onClick={async () => {
-                              try {
-                                const detail = await apiService.getConnection(conn.name);
-                                setSelectedYaml(JSON.stringify(detail, null, 2));
-                              } catch (e: any) {
-                                setActionStatus({ type: 'error', message: e.message });
-                              }
-                            }}
-                            className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#58a6ff] hover:bg-[#30363d] border border-[#30363d]"
-                          >
-                            Inspect
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {connections.map((conn, idx) => {
+                      const name = conn.name || (conn as any).metadata?.name || `conn-${idx}`;
+                      const version = conn.version || (conn as any).metadata?.version || '1.0.0';
+                      const type = conn.type || (conn as any).spec?.type || 'unknown';
+                      const kind = conn.kind || (conn as any).kind || (type.includes('input') || type.includes('pull') || type.includes('tls') || type.includes('watch') ? 'Source' : 'Sink');
+                      const enabled = conn.enabled ?? (conn as any).spec?.enabled ?? false;
+                      const target = conn.target || (conn as any).spec?.endpoint?.url || (conn as any).spec?.topic || (conn as any).spec?.path || '-';
+
+                      return (
+                        <tr key={name} className="hover:bg-[#0d1117]/50">
+                          <td className="py-2.5 font-bold text-[#f0f6fc]">{name}</td>
+                          <td className="py-2.5 text-[#8b949e]">{version}</td>
+                          <td className="py-2.5">
+                            <span className={`mr-1.5 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold border ${
+                              kind === 'Source'
+                                ? 'bg-blue-500/10 text-blue-400 border-blue-500/30'
+                                : 'bg-purple-500/10 text-purple-400 border-purple-500/30'
+                            }`}>
+                              {kind}
+                            </span>
+                            <span className="px-2 py-0.5 rounded text-[11px] bg-[#21262d] text-[#58a6ff] border border-[#30363d]">
+                              {type}
+                            </span>
+                          </td>
+                          <td className="py-2.5">
+                            {enabled ? (
+                              <Badge variant="green">active</Badge>
+                            ) : (
+                              <Badge variant="amber">disabled</Badge>
+                            )}
+                          </td>
+                          <td className="py-2.5 text-[#c9d1d9] truncate max-w-xs">{target}</td>
+                          <td className="py-2.5 text-right">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const detail = await apiService.getConnection(name);
+                                  setSelectedYaml(typeof detail === 'string' ? detail : JSON.stringify(detail, null, 2));
+                                } catch (e: any) {
+                                  setActionStatus({ type: 'error', message: e.message });
+                                }
+                              }}
+                              className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#58a6ff] hover:bg-[#30363d] border border-[#30363d]"
+                            >
+                              Inspect
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -285,22 +340,34 @@ export const Config: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <span className="text-[11px] font-mono text-[#8b949e]">Load Sample:</span>
                 <button
+                  onClick={() => setSelectedYaml(SAMPLE_SOURCE_PULL_YAML)}
+                  className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
+                >
+                  Source: Cloud Pull
+                </button>
+                <button
+                  onClick={() => setSelectedYaml(SAMPLE_SOURCE_KAFKA_YAML)}
+                  className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
+                >
+                  Source: Kafka
+                </button>
+                <button
                   onClick={() => setSelectedYaml(SAMPLE_HTTP_YAML)}
                   className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
                 >
-                  HTTP SIEM
+                  Sink: HTTP SIEM
                 </button>
                 <button
                   onClick={() => setSelectedYaml(SAMPLE_KAFKA_YAML)}
                   className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
                 >
-                  Kafka Output
+                  Sink: Kafka
                 </button>
                 <button
                   onClick={() => setSelectedYaml(SAMPLE_PARQUET_YAML)}
                   className="px-2 py-0.5 text-[11px] font-mono rounded bg-[#21262d] text-[#8b949e] hover:text-[#c9d1d9] border border-[#30363d]"
                 >
-                  Parquet Lake
+                  Sink: Parquet
                 </button>
               </div>
             </div>
@@ -398,6 +465,16 @@ export const Config: React.FC = () => {
                 </div>
                 <div className="shrink-0">
                   <Badge variant="green">{config?.syslog_tcp || ':514'}</Badge>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-md bg-[#0d1117] border border-[#21262d] gap-3 min-w-0">
+                <div className="min-w-0 flex-1">
+                  <div className="text-[#f0f6fc] font-semibold truncate">Syslog TLS Listener (RFC 5425)</div>
+                  <div className="text-[11px] text-[#8b949e] truncate mt-0.5">Encrypted TCP with TLS 1.2/1.3 and mTLS</div>
+                </div>
+                <div className="shrink-0">
+                  <Badge variant="purple">{config?.syslog_tls || ':6514'}</Badge>
                 </div>
               </div>
 

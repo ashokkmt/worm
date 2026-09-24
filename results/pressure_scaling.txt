@@ -1,0 +1,9 @@
+goos: darwin
+goarch: arm64
+pkg: worm/test/pressure
+cpu: Apple M2
+BenchmarkPipeline_E2E/1_Workers-8         	    6020	   1326341 ns/op	   12327 B/op	     172 allocs/op
+BenchmarkPipeline_E2E/4_Workers-8         	    6855	   1475251 ns/op	   12308 B/op	     172 allocs/op
+BenchmarkPipeline_E2E/8_Workers-8         	    6817	   1463107 ns/op	   12399 B/op	     172 allocs/op
+PASS
+ok  	worm/test/pressure	28.389s

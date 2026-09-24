@@ -10,11 +10,14 @@ services:
     ports:
       - "514:514/udp"
       - "514:514/tcp"
+      - "6514:6514/tcp"
       - "8080:8080/tcp"
       - "9090:9090/tcp"
     volumes:
       - ./data:/data
       - ./packs:/worm/packs:ro
+      - ./sources:/worm/sources:ro
+      - ./sinks:/worm/sinks:ro
     environment:
       - WORM_LOG_LEVEL=info
     restart: unless-stopped
@@ -113,6 +116,9 @@ services:
     depends_on:
       - worm
     restart: unless-stopped
+    networks:
+      - worm-net
+
   # 8. Web-based SQLite GUI Viewer
   sqlite-web:
     build:

@@ -1,0 +1,7 @@
+=== RUN   TestPressureProfiles
+    pressure_test.go:170: Starting Smoke Profile (1,000 events)...
+    pressure_test.go:195: Smoke Profile Completed: 1000 events in 216.304125ms (4623.1 EPS, 0.54 MiB/s)
+    pressure_test.go:196: Latency Percentiles: p50=166µs, p95=232µs, p99=1.542ms, max=1.877ms
+--- PASS: TestPressureProfiles (0.22s)
+PASS
+ok  	worm/test/pressure	(cached)

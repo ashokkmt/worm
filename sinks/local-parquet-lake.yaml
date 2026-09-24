@@ -1,9 +1,9 @@
 apiVersion: worm.io/v1
-kind: Connection
+kind: Sink
 metadata:
   name: local-parquet-lake
   version: 1.0.0
-  description: Local columnar Parquet data lake sink with manifest
+  description: Parquet columnar data lake output partitioned by date and category
 spec:
   type: parquet_output
   enabled: true

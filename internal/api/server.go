@@ -34,6 +34,7 @@ type ConfigInfo struct {
 	UIAddress  string `json:"ui_address"`
 	SyslogUDP  string `json:"syslog_udp"`
 	SyslogTCP  string `json:"syslog_tcp"`
+	SyslogTLS  string `json:"syslog_tls,omitempty"`
 	HTTPIngest string `json:"http_ingest"`
 	InboxDir   string `json:"inbox_dir"`
 	DBPath     string `json:"db_path"`
@@ -847,7 +848,7 @@ func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]any{
-		"connections": s.connManager.List(),
+		"connections": s.connManager.ListSummaries(),
 	})
 }
 
@@ -857,12 +858,14 @@ func (s *Server) handleGetConnection(w http.ResponseWriter, r *http.Request) {
 		s.jsonError(w, http.StatusNotFound, "connections manager not configured")
 		return
 	}
-	conn, err := s.connManager.Get(name)
+	raw, err := s.connManager.GetRawYAML(name)
 	if err != nil {
 		s.jsonError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, conn)
+	w.Header().Set("Content-Type", "application/x-yaml; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
 }
 
 func (s *Server) handleValidateConnection(w http.ResponseWriter, r *http.Request) {
@@ -901,21 +904,33 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := connections.LoadConnection(strings.NewReader(req.YamlContent))
 	if err != nil {
 		s.jsonResponse(w, http.StatusOK, map[string]any{
+			"status":  "failed",
 			"success": false,
+			"target":  "spec validation",
 			"error":   err.Error(),
+			"message": err.Error(),
 		})
 		return
 	}
+	target := conn.Summary().Target
+	if target == "" {
+		target = conn.Metadata.Name
+	}
 	if err := conn.TestConnectivity(r.Context()); err != nil {
 		s.jsonResponse(w, http.StatusOK, map[string]any{
+			"status":  "failed",
 			"success": false,
+			"target":  target,
 			"error":   err.Error(),
+			"message": err.Error(),
 		})
 		return
 	}
 	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"status":  "ok",
 		"success": true,
-		"message": "connectivity test succeeded",
+		"target":  target,
+		"message": "TCP connectivity verified to endpoint",
 	})
 }
 

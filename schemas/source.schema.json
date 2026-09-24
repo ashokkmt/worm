@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WORM Source Resource Schema",
+  "description": "JSON schema for declarative YAML ingestion Source resources in WORM",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["worm.io/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Source"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["type", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "cloud_pull",
+            "kafka_input",
+            "syslog_tls",
+            "s3_watch"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string" },
+            "timeout": { "type": "string" },
+            "interval": { "type": "string" },
+            "batchSize": { "type": "integer" },
+            "watermarkPath": { "type": "string" },
+            "authHeader": { "type": "string" },
+            "secretRef": { "type": "string" }
+          }
+        },
+        "brokers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "topic": {
+          "type": "string"
+        },
+        "topics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "consumerGroup": {
+          "type": "string"
+        },
+        "watermarkPath": {
+          "type": "string"
+        },
+        "interval": {
+          "type": "string"
+        },
+        "batchSize": {
+          "type": "integer"
+        },
+        "secretRef": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
