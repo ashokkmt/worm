@@ -376,6 +376,9 @@ func (s *RawStore) GetQuarantined(ctx context.Context, limit, offset int) ([]mod
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate quarantine entries: %w", err)
+	}
 	return entries, nil
 }
 
@@ -466,6 +469,9 @@ func (s *RawStore) GetReplayPendingIDs(ctx context.Context, includeAlreadyReplay
 			return nil, err
 		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate replayable quarantine IDs: %w", err)
 	}
 	return ids, nil
 }
@@ -637,6 +643,9 @@ func (s *RawStore) ListNormalized(ctx context.Context, category, severity, searc
 			continue
 		}
 		events = append(events, &evt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate normalized events: %w", err)
 	}
 
 	return events, total, nil
@@ -827,6 +836,9 @@ func (s *RawStore) ListQuarantinePaged(ctx context.Context, limit, offset int) (
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate quarantine entries: %w", err)
+	}
 
 	return entries, total, nil
 }
@@ -866,6 +878,9 @@ func (s *RawStore) ListSources(ctx context.Context) ([]map[string]any, error) {
 			"events":     count,
 			"last_seen":  lastSeen,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate sources: %w", err)
 	}
 	return sources, nil
 }
