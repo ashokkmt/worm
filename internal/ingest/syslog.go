@@ -2,9 +2,11 @@ package ingest
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -216,26 +218,67 @@ func (l *SyslogTCPListener) Start(ctx context.Context, out chan<- model.Ingested
 }
 
 func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, out chan<- model.IngestedRecord) {
+	defer conn.Close()
 	remoteHost, remotePortStr, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	remotePort, _ := strconv.Atoi(remotePortStr)
 
-	scanner := bufio.NewScanner(conn)
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
+	reader := bufio.NewReader(conn)
 
-	for scanner.Scan() {
+	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 
-		line := strings.TrimRight(scanner.Text(), "\r\n")
-		if len(line) == 0 {
+		// Peek first byte to determine framing (RFC 6587)
+		peekBytes, err := reader.Peek(1)
+		if err != nil {
+			return
+		}
+
+		if peekBytes[0] >= '1' && peekBytes[0] <= '9' {
+			// RFC 6587 octet counting: <MSG-LEN> <MSG>
+			lenStr, err := reader.ReadString(' ')
+			if err != nil {
+				return
+			}
+			msgLen, err := strconv.Atoi(strings.TrimSpace(lenStr))
+			if err == nil && msgLen > 0 && msgLen <= 10*1024*1024 {
+				payload := make([]byte, msgLen)
+				_, err := io.ReadFull(reader, payload)
+				if err != nil {
+					return
+				}
+				rec := model.IngestedRecord{
+					Transport:  "syslog-tcp",
+					SourceIP:   remoteHost,
+					SourcePort: remotePort,
+					RawBytes:   payload,
+					ReceivedAt: time.Now().UTC(),
+				}
+				select {
+				case out <- rec:
+				case <-ctx.Done():
+					return
+				}
+				continue
+			}
+		}
+
+		// Non-transparent framing: newline delimited
+		lineBytes, err := reader.ReadBytes('\n')
+		if err != nil && len(lineBytes) == 0 {
+			return
+		}
+		payload := bytes.TrimRight(lineBytes, "\r\n")
+		if len(payload) == 0 {
+			if err != nil {
+				return
+			}
 			continue
 		}
 
-		payload := []byte(line)
 		rec := model.IngestedRecord{
 			Transport:  "syslog-tcp",
 			SourceIP:   remoteHost,
@@ -247,6 +290,10 @@ func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, ou
 		select {
 		case out <- rec:
 		case <-ctx.Done():
+			return
+		}
+
+		if err != nil {
 			return
 		}
 	}

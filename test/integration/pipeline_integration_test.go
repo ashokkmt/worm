@@ -3,6 +3,7 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"worm/internal/ingest"
+	"worm/internal/model"
 	"worm/internal/output"
 	"worm/internal/packs"
 	"worm/internal/pipeline"
@@ -207,5 +209,111 @@ func TestEndToEndPipeline_AllTransportsAndFormats(t *testing.T) {
 	}
 	if stats.Pending != 0 {
 		t.Errorf("expected 0 pending events after drain, got %d", stats.Pending)
+	}
+}
+
+type failingOutputSink struct{}
+
+func (f *failingOutputSink) Emit(ctx context.Context, event *model.NormalizedEvent) error {
+	return errors.New("simulated remote sink network down")
+}
+func (f *failingOutputSink) Flush() error { return nil }
+func (f *failingOutputSink) Close() error { return nil }
+
+func TestIntegration_SinkFailureAndOctetFraming_BA027(t *testing.T) {
+	root := findProjectRoot(t)
+
+	tempDir, err := os.MkdirTemp("", "worm_failure_e2e_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "worm.db")
+	store, err := rawstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init raw store: %v", err)
+	}
+	defer store.Close()
+
+	snap, err := packs.LoadDir(filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatalf("failed to load packs: %v", err)
+	}
+	packMgr := packs.NewSnapshotManager(snap)
+
+	// Injected failing sink
+	failSink := &failingOutputSink{}
+
+	p := pipeline.New(pipeline.Config{
+		Workers:     2,
+		BufferSize:  100,
+		PackManager: packMgr,
+	}, store, failSink)
+	p.Start()
+
+	// Ingest via Syslog TCP with RFC 6587 octet counting
+	tcpAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("resolve tcp addr failed: %v", err)
+	}
+	tcpListener := ingest.NewSyslogTCPListener(tcpAddr.String())
+	mgr := ingest.NewManager(100)
+	mgr.Register(tcpListener)
+
+	ctx := context.Background()
+	if err := mgr.Start(ctx); err != nil {
+		t.Fatalf("failed to start ingest manager: %v", err)
+	}
+	p.ConnectIngest(ctx, mgr.Channel())
+
+	// Wait for listener to bind
+	time.Sleep(50 * time.Millisecond)
+
+	boundAddr := tcpListener.Addr()
+	tcpConn, err := net.Dial("tcp", boundAddr.String())
+	if err != nil {
+		t.Fatalf("dial tcp failed: %v", err)
+	}
+	defer tcpConn.Close()
+
+	// Octet-counted message (RFC 6587: "<len> <msg>")
+	msg := "<86>Sep 20 10:20:01 srv-prod-01 sshd[14523]: Accepted publickey for deploy from 10.0.1.100 port 52431 ssh2: RSA SHA256:nThbg6kXUpJWGl7E1IGOCspRomTxdCARLviKw6E5SY8"
+	octetFramed := fmt.Sprintf("%d %s", len(msg), msg)
+	_, _ = tcpConn.Write([]byte(octetFramed))
+
+	// Wait for processing
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		stats := p.Stats()
+		if stats.Accepted >= 1 && stats.Pending == 0 {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	_ = mgr.Stop()
+	p.Stop()
+
+	// Invariant check
+	stats := p.Stats()
+	valid, reason := stats.VerifyInvariant()
+	if !valid {
+		t.Fatalf("Loss accounting invariant failed: %s", reason)
+	}
+	if stats.Quarantined != 1 {
+		t.Errorf("expected event to be quarantined due to sink error, got quarantined=%d", stats.Quarantined)
+	}
+
+	// Verify quarantine record has reason "sink_error" and is ReplayEligible
+	quarList, err := store.GetQuarantined(ctx, 10, 0)
+	if err != nil || len(quarList) == 0 {
+		t.Fatalf("failed to retrieve quarantine: %v", err)
+	}
+	if quarList[0].Reason != "sink_error" {
+		t.Errorf("expected reason 'sink_error', got %s", quarList[0].Reason)
+	}
+	if !quarList[0].ReplayEligible {
+		t.Errorf("expected ReplayEligible to be true for sink error")
 	}
 }

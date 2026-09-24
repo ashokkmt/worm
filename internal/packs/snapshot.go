@@ -1,6 +1,8 @@
 package packs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"worm/internal/model"
@@ -20,28 +22,57 @@ type ParserSnapshot interface {
 	GetPack(name string) (*ParserPack, bool)
 	ListPacks() []*ParserPack
 	Version() string
+	Digest() string
 }
 
 // Snapshot implements ParserSnapshot.
 type Snapshot struct {
 	version string
+	digest  string
 	packs   map[string]*ParserPack
 	ordered []*ParserPack
 }
 
 // NewSnapshot builds an immutable snapshot from a slice of validated packs.
-func NewSnapshot(version string, packs []*ParserPack) *Snapshot {
+// It rejects duplicate pack names and computes a deterministic SHA-256 digest.
+func NewSnapshot(version string, packs []*ParserPack) (*Snapshot, error) {
 	packMap := make(map[string]*ParserPack, len(packs))
-	ordered := make([]*ParserPack, len(packs))
-	for i, p := range packs {
+	ordered := make([]*ParserPack, 0, len(packs))
+	h := sha256.New()
+	fmt.Fprintf(h, "version:%s\n", version)
+
+	for _, p := range packs {
+		if p == nil {
+			return nil, errors.New("cannot create snapshot with nil parser pack")
+		}
+		if _, exists := packMap[p.Metadata.Name]; exists {
+			return nil, fmt.Errorf("duplicate parser pack name %q in snapshot", p.Metadata.Name)
+		}
 		packMap[p.Metadata.Name] = p
-		ordered[i] = p
+		ordered = append(ordered, p)
+		fmt.Fprintf(h, "pack:%s:%s:%s:%s\n", p.Metadata.Name, p.Metadata.Version, p.Spec.SourceCategory, p.Spec.Format)
 	}
+
 	return &Snapshot{
 		version: version,
+		digest:  hex.EncodeToString(h.Sum(nil)),
 		packs:   packMap,
 		ordered: ordered,
+	}, nil
+}
+
+// MustNewSnapshot builds a snapshot or panics on error (convenient for fixtures/tests).
+func MustNewSnapshot(version string, packs []*ParserPack) *Snapshot {
+	snap, err := NewSnapshot(version, packs)
+	if err != nil {
+		panic(err)
 	}
+	return snap
+}
+
+// Digest returns the SHA-256 digest of this snapshot's pack configuration.
+func (s *Snapshot) Digest() string {
+	return s.digest
 }
 
 // Match evaluates all active packs against a decoded record.

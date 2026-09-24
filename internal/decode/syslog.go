@@ -55,6 +55,10 @@ func (s *SyslogDecoder) Detect(raw []byte) float64 {
 
 // Decode parses the syslog header and payload into a DecodedRecord.
 func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	if len(raw) > MaxPayloadBytes {
+		return nil, fmt.Errorf("syslog payload %d bytes exceeds maximum limit of %d", len(raw), MaxPayloadBytes)
+	}
+
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, fmt.Errorf("empty syslog message")

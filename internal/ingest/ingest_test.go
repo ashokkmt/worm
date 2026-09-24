@@ -228,6 +228,9 @@ func TestFileWatcherAndIngestFile(t *testing.T) {
 			if rec.Transport != "file" {
 				t.Errorf("expected transport file, got %s", rec.Transport)
 			}
+			if rec.Ack != nil {
+				rec.Ack <- nil
+			}
 			received++
 		case <-deadline:
 			t.Fatalf("timed out waiting for spooled records (received %d/3)", received)
@@ -278,4 +281,99 @@ func TestManagerLifecycle(t *testing.T) {
 	if ok {
 		t.Errorf("expected closed channel after manager Stop")
 	}
+}
+
+func TestSyslogTCP_RFC6587_OctetCounting(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	listener := ingest.NewSyslogTCPListener("127.0.0.1:0")
+	out := make(chan model.IngestedRecord, 10)
+
+	go func() {
+		_ = listener.Start(ctx, out)
+	}()
+
+	var addr net.Addr
+	for i := 0; i < 20; i++ {
+		addr = listener.Addr()
+		if addr != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == nil {
+		t.Fatalf("listener address empty")
+	}
+
+	conn, err := net.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatalf("failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	// RFC 6587 octet counting frame: "42 <14>1 2026-09-24T12:00:00Z host app - - msg"
+	msg := "<14>1 2026-09-24T12:00:00Z host app - - msg"
+	framed := fmt.Sprintf("%d %s", len(msg), msg)
+
+	if _, err := conn.Write([]byte(framed)); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	select {
+	case rec := <-out:
+		if string(rec.RawBytes) != msg {
+			t.Errorf("expected exact payload %q, got %q", msg, string(rec.RawBytes))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for octet-counted syslog record")
+	}
+	_ = listener.Stop()
+}
+
+func TestFileCommitFailureMovesToFailed(t *testing.T) {
+	dir := t.TempDir()
+	inboxDir := filepath.Join(dir, "inbox")
+	_ = os.MkdirAll(inboxDir, 0755)
+
+	logFile := filepath.Join(inboxDir, "failing.log")
+	if err := os.WriteFile(logFile, []byte("single line log\n"), 0644); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	watcher := ingest.NewFileWatcher(inboxDir, 20*time.Millisecond)
+	out := make(chan model.IngestedRecord, 10)
+
+	go func() {
+		_ = watcher.Start(ctx, out)
+	}()
+
+	// Read record and return error on Ack (simulating raw commit failure)
+	select {
+	case rec := <-out:
+		if rec.Ack != nil {
+			rec.Ack <- fmt.Errorf("sqlite disk I/O error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for record")
+	}
+
+	// Wait for file watcher to move to failed/
+	failedDir := filepath.Join(inboxDir, "failed")
+	var entries []os.DirEntry
+	for i := 0; i < 20; i++ {
+		entries, _ = os.ReadDir(failedDir)
+		if len(entries) >= 1 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if len(entries) != 1 {
+		t.Errorf("expected file to move to failed/ directory after commit error, got %d files", len(entries))
+	}
+	_ = watcher.Stop()
 }

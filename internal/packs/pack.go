@@ -98,6 +98,11 @@ func LoadPack(r io.Reader) (*ParserPack, error) {
 	return &pack, nil
 }
 
+var (
+	packNameRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+	semverRegex   = regexp.MustCompile(`^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`)
+)
+
 // Validate verifies structural correctness and compiles internal expressions.
 func (p *ParserPack) Validate() error {
 	if p.APIVersion != "worm.io/v1" {
@@ -109,8 +114,14 @@ func (p *ParserPack) Validate() error {
 	if p.Metadata.Name == "" {
 		return errors.New("metadata.name is required")
 	}
+	if !packNameRegex.MatchString(p.Metadata.Name) {
+		return fmt.Errorf("invalid metadata.name %q: must match ^[a-z0-9][a-z0-9-]*$", p.Metadata.Name)
+	}
 	if p.Metadata.Version == "" {
 		return errors.New("metadata.version is required")
+	}
+	if !semverRegex.MatchString(p.Metadata.Version) {
+		return fmt.Errorf("invalid metadata.version %q: must be valid semver (e.g. 1.0.0)", p.Metadata.Version)
 	}
 	if !KnownSourceCategories[p.Spec.SourceCategory] {
 		return fmt.Errorf("unknown sourceCategory: %q", p.Spec.SourceCategory)
@@ -144,6 +155,15 @@ func (p *ParserPack) Validate() error {
 			// valid
 		default:
 			return fmt.Errorf("field %q has unsupported type %q", name, f.Type)
+		}
+	}
+
+	for src, dst := range p.Spec.Map {
+		if !strings.HasPrefix(dst, "event.") {
+			return fmt.Errorf("spec.map target %q must start with 'event.'", dst)
+		}
+		if _, ok := p.Spec.Fields[src]; !ok {
+			return fmt.Errorf("spec.map source %q is not defined in spec.fields", src)
 		}
 	}
 
@@ -229,26 +249,62 @@ func formatMatches(packFormat, recFormat string) bool {
 	return false
 }
 
-// lookupField looks for key in rec.Fields, then in rec.Headers, supporting "payload." prefix.
-func lookupField(rec *model.DecodedRecord, key string) (any, bool) {
+// LookupNested traverses nested map structures using dot-separated paths (e.g. "user.id" or "meta.host").
+func LookupNested(m map[string]any, path string) (any, bool) {
+	if m == nil || path == "" {
+		return nil, false
+	}
+	// 1. Direct match first (for keys that contain dots)
+	if v, ok := m[path]; ok {
+		return v, true
+	}
+	// 2. Traversal by dot separation
+	parts := strings.Split(path, ".")
+	var current any = m
+	for _, part := range parts {
+		switch node := current.(type) {
+		case map[string]any:
+			val, ok := node[part]
+			if !ok {
+				return nil, false
+			}
+			current = val
+		case map[any]any:
+			val, ok := node[part]
+			if !ok {
+				return nil, false
+			}
+			current = val
+		default:
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+// LookupField resolves a dot-separated path within a DecodedRecord's Fields or Headers.
+// Supports nested maps, payload prefixes, and direct keys.
+func LookupField(rec *model.DecodedRecord, key string) (any, bool) {
 	if rec == nil {
 		return nil, false
 	}
-	// Direct lookup in Fields
-	if v, ok := rec.Fields[key]; ok {
-		return v, true
-	}
-	// Without "payload." prefix
 	trimmed := strings.TrimPrefix(key, "payload.")
-	if v, ok := rec.Fields[trimmed]; ok {
+	if v, ok := LookupNested(rec.Fields, key); ok {
 		return v, true
 	}
-	// In Headers
-	if v, ok := rec.Headers[key]; ok {
+	if v, ok := LookupNested(rec.Fields, trimmed); ok {
 		return v, true
 	}
-	if v, ok := rec.Headers[trimmed]; ok {
+	if v, ok := LookupNested(rec.Headers, key); ok {
+		return v, true
+	}
+	if v, ok := LookupNested(rec.Headers, trimmed); ok {
 		return v, true
 	}
 	return nil, false
+}
+
+// lookupField is an internal alias for LookupField.
+func lookupField(rec *model.DecodedRecord, key string) (any, bool) {
+	return LookupField(rec, key)
 }

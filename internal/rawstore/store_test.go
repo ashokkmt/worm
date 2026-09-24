@@ -345,3 +345,97 @@ func TestDeleteQuarantineAndCounts(t *testing.T) {
 	}
 }
 
+func TestBatchChildrenAndSourcePort(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+
+	rec := model.IngestedRecord{
+		Transport:  "syslog_tcp",
+		SourceIP:   "10.0.0.1",
+		SourcePort: 5140,
+		RawBytes:   []byte("batch payload line 1\nbatch payload line 2"),
+		ReceivedAt: time.Now().UTC(),
+	}
+	rawEvt, err := store.Store(ctx, rec)
+	if err != nil {
+		t.Fatalf("store failed: %v", err)
+	}
+
+	retrieved, err := store.Retrieve(ctx, rawEvt.RawID)
+	if err != nil {
+		t.Fatalf("retrieve failed: %v", err)
+	}
+	if retrieved.SourcePort != 5140 {
+		t.Errorf("expected SourcePort 5140, got %d", retrieved.SourcePort)
+	}
+
+	// Store child 0
+	evt0 := &model.NormalizedEvent{
+		Worm: model.WormEnvelope{
+			EventID:        "evt-child-0",
+			RawID:          rawEvt.RawID,
+			RecordOrdinal:  0,
+			SourceCategory: "server",
+			SourceID:       "srv1",
+			ReceivedTime:   time.Now().UTC(),
+		},
+		OCSF: map[string]any{
+			"time":    time.Now().UnixMilli(),
+			"message": "child zero",
+		},
+	}
+	if err := store.StoreNormalized(ctx, evt0); err != nil {
+		t.Fatalf("StoreNormalized child 0 failed: %v", err)
+	}
+
+	// Store child 1
+	evt1 := &model.NormalizedEvent{
+		Worm: model.WormEnvelope{
+			EventID:        "evt-child-1",
+			RawID:          rawEvt.RawID,
+			RecordOrdinal:  1,
+			SourceCategory: "server",
+			SourceID:       "srv1",
+			ReceivedTime:   time.Now().UTC(),
+		},
+		OCSF: map[string]any{
+			"time":    time.Now().UnixMilli(),
+			"message": "child one",
+		},
+	}
+	if err := store.StoreNormalized(ctx, evt1); err != nil {
+		t.Fatalf("StoreNormalized child 1 failed: %v", err)
+	}
+
+	// Both child records must exist
+	count, err := store.CountNormalized(ctx)
+	if err != nil {
+		t.Fatalf("CountNormalized failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 normalized child records, got %d", count)
+	}
+
+	// Quarantine child 2
+	qEntry := model.QuarantineEntry{
+		QuarantineID:  "quar-child-2",
+		RawID:         rawEvt.RawID,
+		RecordOrdinal: 2,
+		RawSHA256:     rawEvt.RawSHA256,
+		Stage:         "parser_match",
+		Reason:        "unknown_source",
+		RawPreview:    "child two preview",
+	}
+	if err := store.Quarantine(ctx, qEntry); err != nil {
+		t.Fatalf("Quarantine failed: %v", err)
+	}
+
+	gotQ, err := store.GetQuarantineByID(ctx, "quar-child-2")
+	if err != nil {
+		t.Fatalf("GetQuarantineByID failed: %v", err)
+	}
+	if gotQ.RecordOrdinal != 2 {
+		t.Errorf("expected RecordOrdinal 2, got %d", gotQ.RecordOrdinal)
+	}
+}
+

@@ -257,7 +257,7 @@ func main() {
 		delay = time.Duration(float64(time.Second) / *rateFlag)
 	}
 
-	var emitted int
+	var emitted, acked, errCount int
 	for {
 		if *countFlag > 0 && emitted >= *countFlag {
 			break
@@ -281,38 +281,52 @@ func main() {
 
 		payload := sim.Generate(sc, time.Now().UTC(), rng)
 
+		var sendErr error
 		switch *formatFlag {
 		case "stdout":
-			fmt.Println(string(payload))
+			_, sendErr = fmt.Println(string(payload))
 		case "syslog-udp":
-			_, _ = udpConn.Write(payload)
+			_, sendErr = udpConn.Write(payload)
 		case "syslog-tcp":
-			_, _ = fmt.Fprintf(tcpConn, "%s\n", string(payload))
+			_, sendErr = fmt.Fprintf(tcpConn, "%s\n", string(payload))
 		case "http-post":
 			resp, httpErr := http.Post(*targetFlag, "application/json", bytes.NewReader(payload))
-			if httpErr == nil && resp != nil {
+			if httpErr != nil {
+				sendErr = httpErr
+			} else {
+				if resp.StatusCode != http.StatusOK {
+					sendErr = fmt.Errorf("http status %d", resp.StatusCode)
+				}
 				_ = resp.Body.Close()
 			}
 		case "file":
 			if sim.Format() == "csv" {
 				fileName := fmt.Sprintf("audit_%s_%d.csv", sim.Name(), time.Now().UnixNano())
 				filePath := filepath.Join(*outputDir, fileName)
-				_ = os.WriteFile(filePath, payload, 0644)
+				sendErr = os.WriteFile(filePath, payload, 0644)
 			} else {
 				filePath := filepath.Join(*outputDir, fmt.Sprintf("%s.log", sim.Name()))
 				f, fErr := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-				if fErr == nil {
-					_, _ = fmt.Fprintf(f, "%s\n", string(payload))
+				if fErr != nil {
+					sendErr = fErr
+				} else {
+					_, sendErr = fmt.Fprintf(f, "%s\n", string(payload))
 					_ = f.Close()
 				}
 			}
 		}
 
 		emitted++
+		if sendErr != nil {
+			errCount++
+		} else {
+			acked++
+		}
+
 		if delay > 0 {
 			time.Sleep(delay)
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "Finished logsim: emitted %d events.\n", emitted)
+	fmt.Fprintf(os.Stderr, "Finished logsim: emitted=%d acked=%d errors=%d\n", emitted, acked, errCount)
 }

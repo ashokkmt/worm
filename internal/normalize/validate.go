@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 	"worm/internal/model"
 )
@@ -37,6 +38,16 @@ func (v *Validator) Validate(norm *model.NormalizedEvent) error {
 	// 2. Mandatory OCSF root fields
 	if norm.OCSF == nil {
 		return errors.New("missing OCSF event dictionary")
+	}
+
+	// Mandatory OCSF category and class names
+	catName, hasCat := norm.OCSF["category_name"]
+	if !hasCat || catName == nil || strings.TrimSpace(fmt.Sprintf("%v", catName)) == "" {
+		return errors.New("missing mandatory OCSF 'category_name'")
+	}
+	className, hasClass := norm.OCSF["class_name"]
+	if !hasClass || className == nil || strings.TrimSpace(fmt.Sprintf("%v", className)) == "" {
+		return errors.New("missing mandatory OCSF 'class_name'")
 	}
 
 	// Event timestamp is required in OCSF (must be epoch ms > 0)

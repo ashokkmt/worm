@@ -22,20 +22,22 @@ var commonTimeLayouts = []string{
 }
 
 // ExtractAndConvert extracts declared fields from a DecodedRecord and coerces them
-// into their strongly-typed representations. It also isolates unmapped fields if requested.
-func ExtractAndConvert(pack *ParserPack, rec *model.DecodedRecord) (map[string]any, map[string]any, error) {
+// into their strongly-typed representations. It also isolates unmapped fields if requested
+// and collects warnings for non-fatal optional conversion failures.
+func ExtractAndConvert(pack *ParserPack, rec *model.DecodedRecord) (map[string]any, map[string]any, []string, error) {
 	if pack == nil || rec == nil {
-		return nil, nil, fmt.Errorf("nil pack or decoded record")
+		return nil, nil, nil, fmt.Errorf("nil pack or decoded record")
 	}
 
 	extracted := make(map[string]any)
 	consumedSourceFields := make(map[string]bool)
+	var warnings []string
 
 	for fieldName, rule := range pFields(pack) {
 		val, found := lookupField(rec, rule.From)
 		if !found || val == nil {
 			if rule.Required {
-				return nil, nil, fmt.Errorf("required field %q (from %q) is missing", fieldName, rule.From)
+				return nil, nil, nil, fmt.Errorf("required field %q (from %q) is missing", fieldName, rule.From)
 			}
 			continue
 		}
@@ -47,9 +49,10 @@ func ExtractAndConvert(pack *ParserPack, rec *model.DecodedRecord) (map[string]a
 		convertedVal, err := castType(val, rule.Type, rule.Layout)
 		if err != nil {
 			if rule.Required {
-				return nil, nil, fmt.Errorf("field %q conversion to %s failed: %w", fieldName, rule.Type, err)
+				return nil, nil, nil, fmt.Errorf("field %q conversion to %s failed: %w", fieldName, rule.Type, err)
 			}
-			// For non-required fields, keep original value
+			// For non-required fields, keep original value and record a warning
+			warnings = append(warnings, fmt.Sprintf("field %q: conversion to %s failed (%v); preserving original value", fieldName, rule.Type, err))
 			convertedVal = val
 		}
 
@@ -66,7 +69,7 @@ func ExtractAndConvert(pack *ParserPack, rec *model.DecodedRecord) (map[string]a
 		}
 	}
 
-	return extracted, unmapped, nil
+	return extracted, unmapped, warnings, nil
 }
 
 func pFields(pack *ParserPack) map[string]FieldRule {
