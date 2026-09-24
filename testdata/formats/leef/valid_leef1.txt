@@ -1,0 +1,1 @@
+LEEF:1.0|Microsoft|MSExchange|2013|4001|src=192.168.1.50	dst=10.0.0.1	usrName=alice	action=login_success

@@ -1,0 +1,1 @@
+<134>1 2026-09-24T12:00:00.000Z iam-gateway auth-proc 4521 ID40 - LEEF:2.0|EnterpriseIAM|AuthService|2.4|AUTH_FAIL|x5E|usrName=admin^src=192.168.10.5^reason=Bad credentials

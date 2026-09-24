@@ -15,6 +15,7 @@ import (
 
 	"worm/internal/api"
 	"worm/internal/cli"
+	"worm/internal/connections"
 	"worm/internal/ingest"
 	"worm/internal/model"
 	"worm/internal/output"
@@ -34,6 +35,54 @@ func main() {
 			return
 		case "status", "-status", "--status":
 			cli.StatusDaemon(cli.DefaultPIDFile, ":9090")
+			return
+		case "connections", "-connections", "--connections":
+			if len(os.Args) >= 3 {
+				sub := os.Args[2]
+				switch sub {
+				case "validate":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ValidateConnectionCLI(os.Args[i+1])
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm connections validate -f <file.yaml>")
+					return
+				case "test":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.TestConnectionCLI(os.Args[i+1])
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm connections test -f <file.yaml>")
+					return
+				case "apply":
+					for i, a := range os.Args {
+						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
+							cli.ApplyConnectionCLI(os.Args[i+1], ":9090", "connections")
+							return
+						}
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm connections apply -f <file.yaml>")
+					return
+				case "rollback":
+					cli.RollbackConnectionCLI(":9090", "connections")
+					return
+				case "list":
+					cli.ListConnectionsCLI(":9090", "connections")
+					return
+				case "get":
+					if len(os.Args) >= 4 {
+						cli.GetConnectionCLI(os.Args[3], ":9090", "connections")
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm connections get <name>")
+					return
+				}
+			}
+			cli.ListConnectionsCLI(":9090", "connections")
 			return
 		case "packs", "-packs", "--packs":
 			for i, a := range os.Args {
@@ -77,6 +126,7 @@ func main() {
 
 	dbPath := flag.String("db", "data/worm.db", "Path to SQLite raw store database")
 	packsDir := flag.String("packs-dir", "packs", "Path to YAML parser packs directory")
+	connsDir := flag.String("conns-dir", "connections", "Path to YAML connection resources directory")
 	workers := flag.Int("workers", 4, "Number of concurrent pipeline workers")
 	readStdin := flag.Bool("stdin", false, "Read logs from stdin line-by-line")
 	verifyRawID := flag.String("verify", "", "Cryptographically verify a raw record by raw_id")
@@ -318,6 +368,9 @@ func main() {
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
 		uiServer.SetIngestTracker(mgr)
+		connMgr := connections.NewManager(*connsDir)
+		_ = connMgr.LoadDir(*connsDir)
+		uiServer.SetConnManager(connMgr, *connsDir)
 		if err := uiServer.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
 		} else {

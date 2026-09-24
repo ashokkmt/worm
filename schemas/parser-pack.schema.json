@@ -57,7 +57,34 @@
         },
         "format": {
           "type": "string",
-          "enum": ["syslog", "json", "csv", "cef", "text", "*"]
+          "enum": ["syslog", "json", "csv", "cef", "xml", "leef", "text", "*"]
+        },
+        "decode": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "xml": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "recordPath": { "type": "string" },
+                "attributePrefix": { "type": "string" },
+                "textKey": { "type": "string" },
+                "namespaceAliases": {
+                  "type": "object",
+                  "additionalProperties": { "type": "string" }
+                }
+              }
+            },
+            "csv": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "delimiter": { "type": "string" },
+                "hasHeader": { "type": "boolean" }
+              }
+            }
+          }
         },
         "match": {
           "type": "object",

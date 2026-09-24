@@ -1,0 +1,39 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: cloud-audit
+  version: 1.0.0
+  description: Vendor-neutral cloud management and API audit event
+  author: WORM Team
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    fieldEquals:
+      service: "cloud-audit"
+  fields:
+    event_time:
+      from: eventTime
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z"
+    event_name:
+      from: eventName
+      type: string
+    event_source:
+      from: eventSource
+      type: string
+    src_ip:
+      from: sourceIPAddress
+      type: ip
+    user_name:
+      from: userIdentity.userName
+      type: string
+  map:
+    event_time: event.time
+    event_name: event.activity_name
+    event_source: event.message
+    src_ip: event.src_endpoint.ip
+    user_name: event.actor.user.uid
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/cloud-audit/valid_audit.json

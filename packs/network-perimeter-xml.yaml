@@ -1,0 +1,43 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: network-perimeter-xml
+  version: 1.0.0
+  description: Perimeter security appliance XML intrusion alert export
+  author: WORM Team
+spec:
+  sourceCategory: network_device
+  format: xml
+  match:
+    fieldEquals:
+      xml_root_local: "perimeter_alert"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z"
+    src_ip:
+      from: src_ip
+      type: ip
+    dst_ip:
+      from: dst_ip
+      type: ip
+    dst_port:
+      from: dst_port
+      type: integer
+    action:
+      from: action
+      type: string
+    signature:
+      from: signature
+      type: string
+  map:
+    timestamp: event.time
+    src_ip: event.src_endpoint.ip
+    dst_ip: event.dst_endpoint.ip
+    dst_port: event.dst_endpoint.port
+    action: event.action
+    signature: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/network-perimeter-xml/valid_alert.xml

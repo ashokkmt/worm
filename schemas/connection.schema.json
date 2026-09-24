@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WORM Connection Resource Schema",
+  "description": "JSON schema for declarative YAML connection resources in WORM",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "enum": ["worm.io/v1"]
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["Connection"]
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$"
+        },
+        "version": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "spec": {
+      "type": "object",
+      "required": ["type", "enabled"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "http_output",
+            "kafka_output",
+            "parquet_output",
+            "ndjson_output",
+            "kafka_input",
+            "cloud_pull"
+          ]
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "format": { "type": "string", "enum": ["ndjson", "json"] },
+            "batchEvents": { "type": "integer" },
+            "flushInterval": { "type": "string" },
+            "retry": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "maxAttempts": { "type": "integer" },
+                "minBackoff": { "type": "string" },
+                "maxBackoff": { "type": "string" }
+              }
+            }
+          }
+        },
+        "endpoint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string" },
+            "timeout": { "type": "string" },
+            "secretRef": { "type": "string" }
+          }
+        },
+        "brokers": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "topic": {
+          "type": "string"
+        },
+        "topics": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "key": {
+          "type": "string"
+        },
+        "acks": {
+          "type": "string"
+        },
+        "idempotent": {
+          "type": "boolean"
+        },
+        "compression": {
+          "type": "string",
+          "enum": ["none", "gzip", "snappy", "zstd"]
+        },
+        "batchBytes": {
+          "type": "integer"
+        },
+        "linger": {
+          "type": "string"
+        },
+        "consumerGroup": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "partitionBy": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "maxRowsPerFile": {
+          "type": "integer"
+        },
+        "manifest": {
+          "type": "boolean"
+        },
+        "secretRef": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: appliance-proprietary-text
+  version: 1.0.0
+  description: Proprietary hardware appliance heartbeat and health status text events
+  author: WORM Team
+spec:
+  sourceCategory: other
+  format: text
+  match:
+    contains: "[APPLIANCE-CUSTOM]"
+  fields:
+    ip:
+      from: ip
+      type: ip
+    user:
+      from: user
+      type: string
+    status:
+      from: status
+      type: string
+    event:
+      from: event
+      type: string
+    msg:
+      from: msg
+      type: string
+  map:
+    ip: event.src_endpoint.ip
+    user: event.actor.user.uid
+    status: event.status
+    event: event.activity_name
+    msg: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/appliance-proprietary-text/valid_appliance.log

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: Connection
+metadata:
+  name: normalized-kafka
+  version: 1.0.0
+  description: Normalized events Kafka producer sink
+spec:
+  type: kafka_output
+  enabled: true
+  brokers:
+    - "127.0.0.1:9092"
+  topic: worm.normalized.v1
+  key: worm.source_id
+  acks: all
+  idempotent: true
+  compression: zstd
+  batchBytes: 1048576
+  linger: 5ms
+  secretRef: kafka-client-auth

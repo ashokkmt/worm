@@ -1,0 +1,39 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: container-runtime
+  version: 1.0.0
+  description: Container runtime lifecycle and workload audit events
+  author: WORM Team
+spec:
+  sourceCategory: container
+  format: json
+  match:
+    fieldEquals:
+      source: "container-runtime"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z"
+    container_id:
+      from: container_id
+      type: string
+    host_ip:
+      from: host_ip
+      type: ip
+    message:
+      from: message
+      type: string
+    action:
+      from: action
+      type: string
+  map:
+    timestamp: event.time
+    message: event.message
+    host_ip: event.src_endpoint.ip
+    container_id: event.activity_name
+    action: event.action
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/container-runtime/valid_container.json

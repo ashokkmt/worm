@@ -1,0 +1,13 @@
+{
+  "service": "cloud-audit",
+  "eventVersion": "1.08",
+  "userIdentity": {
+    "type": "IAMUser",
+    "userName": "alice-admin"
+  },
+  "eventTime": "2026-09-24T12:00:00Z",
+  "eventSource": "iam.amazonaws.com",
+  "eventName": "CreateSecurityGroup",
+  "sourceIPAddress": "198.51.100.12",
+  "region": "us-east-1"
+}

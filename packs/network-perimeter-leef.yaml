@@ -1,0 +1,38 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: network-perimeter-leef
+  version: 1.0.0
+  description: Perimeter firewall session events in IBM LEEF format
+  author: WORM Team
+spec:
+  sourceCategory: network_device
+  format: leef
+  match:
+    fieldEquals:
+      product: "NextGenFW"
+  fields:
+    src:
+      from: src
+      type: ip
+    dst:
+      from: dst
+      type: ip
+    dstPort:
+      from: dstPort
+      type: integer
+    act:
+      from: act
+      type: string
+    proto:
+      from: proto
+      type: string
+  map:
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    dstPort: event.dst_endpoint.port
+    act: event.action
+    proto: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/network-perimeter-leef/valid_session.leef
