@@ -18,11 +18,12 @@ const (
 // IngestedRecord represents a raw datagram or payload accepted at any boundary
 // before it is durably committed to the RawStore.
 type IngestedRecord struct {
-	Transport  string    `json:"transport"`   // e.g. "syslog_udp", "syslog_tcp", "http_post", "file_spool", "stdin"
-	SourceIP   string    `json:"source_ip"`   // remote sender IP or "local"
-	SourcePort int       `json:"source_port"` // remote sender port or 0
-	RawBytes   []byte    `json:"raw_bytes"`   // exact unmodified bytes received on the wire
-	ReceivedAt time.Time `json:"received_at"` // ingress timestamp
+	Transport  string     `json:"transport"`   // e.g. "syslog_udp", "syslog_tcp", "http_post", "file_spool", "stdin"
+	SourceIP   string     `json:"source_ip"`   // remote sender IP or "local"
+	SourcePort int        `json:"source_port"` // remote sender port or 0
+	RawBytes   []byte     `json:"raw_bytes"`   // exact unmodified bytes received on the wire
+	ReceivedAt time.Time  `json:"received_at"` // ingress timestamp
+	Ack        chan error `json:"-"`           // optional downstream raw commit acknowledgement
 }
 
 // RawEvent represents a durably committed, cryptographically hashed raw log record.
@@ -32,6 +33,7 @@ type RawEvent struct {
 	ByteCount  int       `json:"byte_count"`  // exact size of raw payload in bytes
 	Transport  string    `json:"transport"`   // transport protocol/channel
 	SourceIP   string    `json:"source_ip"`   // remote source IP
+	SourcePort int       `json:"source_port"` // remote source port
 	ReceivedAt time.Time `json:"received_at"` // exact reception timestamp
 	Payload    []byte    `json:"payload"`     // verbatim wire bytes
 	Status     RawStatus `json:"status"`      // accepted, normalized, quarantined
@@ -85,6 +87,7 @@ type NormalizedEvent struct {
 type QuarantineEntry struct {
 	QuarantineID   string     `json:"quarantine_id"`             // e.g. "worm-quar-20260920-00000001"
 	RawID          string     `json:"raw_id"`                    // pointer to raw event
+	RecordOrdinal  int        `json:"record_ordinal"`            // child record index in batch (0 for standalone)
 	RawSHA256      string     `json:"raw_sha256"`                // SHA-256 digest
 	Stage          string     `json:"stage"`                     // stage where failure occurred
 	Reason         string     `json:"reason"`                    // "unknown_source", "parse_error", "schema_violation", "conversion_error"

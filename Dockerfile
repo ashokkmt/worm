@@ -21,14 +21,23 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/worm ./cmd/worm
 
 # Stage 3: Minimal production runtime image
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata libcap && \
+    addgroup -g 10001 -S worm && \
+    adduser -u 10001 -S worm -G worm && \
+    mkdir -p /data/inbox /data/output /worm/packs && \
+    chown -R worm:worm /data /worm
+
 WORKDIR /worm
 
 COPY --from=builder /bin/worm /bin/worm
-COPY packs/ /worm/packs/
-COPY schemas/ /worm/schemas/
+RUN setcap 'cap_net_bind_service=+ep' /bin/worm
 
-EXPOSE 514/udp 514/tcp 8080/tcp 9090/tcp
+COPY --chown=worm:worm packs/ /worm/packs/
+COPY --chown=worm:worm schemas/ /worm/schemas/
+
+USER 10001:10001
+
+EXPOSE 514/udp 514/tcp 1514/udp 1514/tcp 8080/tcp 9090/tcp
 VOLUME ["/data"]
 
 ENTRYPOINT ["/bin/worm"]

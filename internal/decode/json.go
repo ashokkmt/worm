@@ -8,10 +8,6 @@ import (
 	"worm/internal/model"
 )
 
-const (
-	maxJSONArrayElements = 10000
-)
-
 // JSONDecoder parses single JSON objects, bounded JSON arrays, and NDJSON streams.
 type JSONDecoder struct{}
 
@@ -44,6 +40,10 @@ func (j *JSONDecoder) Detect(raw []byte) float64 {
 
 // Decode splits JSON documents into one or more DecodedRecord child events.
 func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	if len(raw) > MaxPayloadBytes {
+		return nil, fmt.Errorf("JSON payload %d bytes exceeds maximum limit of %d", len(raw), MaxPayloadBytes)
+	}
+
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, fmt.Errorf("empty JSON payload")
@@ -56,9 +56,9 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			return nil, fmt.Errorf("malformed JSON array: %w", err)
 		}
 
-		if len(rawArray) > maxJSONArrayElements {
+		if len(rawArray) > MaxChildren {
 			return nil, fmt.Errorf("JSON array exceeds bounded maximum of %d elements (got %d)",
-				maxJSONArrayElements, len(rawArray))
+				MaxChildren, len(rawArray))
 		}
 
 		records := make([]*model.DecodedRecord, 0, len(rawArray))
@@ -66,6 +66,9 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			var fields map[string]any
 			if err := json.Unmarshal(itemBytes, &fields); err != nil {
 				return nil, fmt.Errorf("malformed JSON object at array index %d: %w", i, err)
+			}
+			if len(fields) > MaxFields {
+				return nil, fmt.Errorf("JSON object at index %d exceeds maximum fields limit %d (got %d)", i, MaxFields, len(fields))
 			}
 
 			records = append(records, &model.DecodedRecord{
@@ -87,6 +90,10 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		ordinal := 0
 
 		for scanner.Scan() {
+			if len(records) >= MaxChildren {
+				return nil, fmt.Errorf("NDJSON exceeds maximum allowed child records %d", MaxChildren)
+			}
+
 			line := bytes.TrimSpace(scanner.Bytes())
 			if len(line) == 0 {
 				continue
@@ -96,6 +103,9 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			if err := json.Unmarshal(line, &fields); err != nil {
 				// If a multi-line document has non-JSON lines, fail parsing
 				return nil, fmt.Errorf("malformed NDJSON line at ordinal %d: %w", ordinal, err)
+			}
+			if len(fields) > MaxFields {
+				return nil, fmt.Errorf("NDJSON object at ordinal %d exceeds maximum fields limit %d (got %d)", ordinal, MaxFields, len(fields))
 			}
 
 			// Copy line bytes
@@ -125,6 +135,9 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	var fields map[string]any
 	if err := json.Unmarshal(trimmed, &fields); err != nil {
 		return nil, fmt.Errorf("malformed JSON object: %w", err)
+	}
+	if len(fields) > MaxFields {
+		return nil, fmt.Errorf("JSON object exceeds maximum fields limit %d (got %d)", MaxFields, len(fields))
 	}
 
 	record := &model.DecodedRecord{

@@ -251,3 +251,99 @@ func TestPipelineBatchExpansion_JSON_and_CSV(t *testing.T) {
 	}
 }
 
+func TestRejectionAccounting_BA001(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test_rejection.db")
+	store, err := rawstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to create rawstore: %v", err)
+	}
+	defer store.Close()
+
+	sink := NewMemorySink()
+	// Buffer size 1, 0 workers so buffer stays full!
+	cfg := Config{
+		Workers:    0,
+		BufferSize: 1,
+	}
+	p := New(cfg, store, sink)
+
+	rec := model.IngestedRecord{
+		Transport:  "syslog_udp",
+		SourceIP:   "10.0.0.1",
+		RawBytes:   []byte("<14>test"),
+		ReceivedAt: time.Now().UTC(),
+	}
+
+	// First submit fills buffer
+	if err := p.Submit(rec); err != nil {
+		t.Fatalf("first submit should succeed: %v", err)
+	}
+
+	// Second submit must fail because buffer is full
+	err = p.Submit(rec)
+	if err == nil {
+		t.Fatalf("expected error on full buffer submit")
+	}
+
+	stats := p.Stats()
+	valid, reason := stats.VerifyInvariant()
+	if !valid {
+		t.Fatalf("invariant broken after rejection: %s", reason)
+	}
+	if stats.Accepted != 1 {
+		t.Errorf("expected accepted to be 1, got %d (rejected submit was wrongly counted as accepted!)", stats.Accepted)
+	}
+	if stats.Pending != 1 {
+		t.Errorf("expected pending to be 1, got %d", stats.Pending)
+	}
+}
+
+func TestEmptyBatchAccounting_BA004(t *testing.T) {
+	p, store, _ := setupTestPipeline(t, 2)
+	ctx := context.Background()
+
+	// Empty CSV (only header, zero data rows)
+	emptyCSV := []byte("col1,col2,col3\n")
+	rec := model.IngestedRecord{
+		Transport:  "file",
+		SourceIP:   "empty.csv",
+		RawBytes:   emptyCSV,
+		ReceivedAt: time.Now().UTC(),
+	}
+
+	if err := p.SubmitSync(ctx, rec); err != nil {
+		t.Fatalf("SubmitSync failed: %v", err)
+	}
+
+	p.Stop()
+
+	stats := p.Stats()
+	valid, reason := stats.VerifyInvariant()
+	if !valid {
+		t.Fatalf("invariant broken after empty batch: %s", reason)
+	}
+
+	// 1 raw record accepted, 0 normalized, 1 quarantined (empty_payload), 0 pending
+	if stats.Accepted != 1 {
+		t.Errorf("expected accepted 1, got %d", stats.Accepted)
+	}
+	if stats.Quarantined != 1 {
+		t.Errorf("expected quarantined 1, got %d", stats.Quarantined)
+	}
+	if stats.Normalized != 0 {
+		t.Errorf("expected normalized 0, got %d", stats.Normalized)
+	}
+	if stats.Pending != 0 {
+		t.Errorf("expected pending 0, got %d", stats.Pending)
+	}
+
+	qList, err := store.GetQuarantined(ctx, 10, 0)
+	if err != nil {
+		t.Fatalf("GetQuarantined failed: %v", err)
+	}
+	if len(qList) != 1 || qList[0].Reason != "empty_payload" {
+		t.Errorf("expected 1 quarantine entry with reason empty_payload, got %+v", qList)
+	}
+}
+

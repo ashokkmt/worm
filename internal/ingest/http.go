@@ -1,11 +1,11 @@
 package ingest
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -91,41 +91,60 @@ func (h *HTTPListener) Start(ctx context.Context, out chan<- model.IngestedRecor
 		// Determine client IP & port
 		clientIP, clientPort := h.extractRemoteAddr(r)
 
-		// Read and split records (supports single JSON object or newline-delimited NDJSON)
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(`{"error": "failed to read payload: %v"}`, err), http.StatusBadRequest)
+			return
+		}
+		if len(bodyBytes) == 0 {
+			http.Error(w, `{"error": "empty body"}`, http.StatusBadRequest)
+			return
+		}
+
+		cType := strings.ToLower(r.Header.Get("Content-Type"))
+		isExplicitNDJSON := strings.Contains(cType, "ndjson") || strings.Contains(cType, "x-ndjson")
+
 		var count int
-		scanner := bufio.NewScanner(r.Body)
-		buf := make([]byte, 64*1024)
-		scanner.Buffer(buf, 1024*1024)
 
-		for scanner.Scan() {
-			line := bytes.TrimSpace(scanner.Bytes())
-			if len(line) == 0 {
-				continue
+		if isExplicitNDJSON {
+			// Line-delimited NDJSON: split on \n without mutilating tokens
+			lines := bytes.Split(bodyBytes, []byte("\n"))
+			for _, line := range lines {
+				if len(bytes.TrimSpace(line)) == 0 {
+					continue
+				}
+				rec := model.IngestedRecord{
+					Transport:  "http-post",
+					SourceIP:   clientIP,
+					SourcePort: clientPort,
+					RawBytes:   line,
+					ReceivedAt: time.Now().UTC(),
+				}
+				select {
+				case out <- rec:
+					count++
+				case <-ctx.Done():
+					http.Error(w, `{"error": "server shutting down"}`, http.StatusServiceUnavailable)
+					return
+				}
 			}
-
-			payload := make([]byte, len(line))
-			copy(payload, line)
-
+		} else {
+			// Single structured document (JSON object/array, XML, or verbatim document)
+			// Preserves exact byte-for-byte wire representation without newline splitting or byte trimming!
 			rec := model.IngestedRecord{
 				Transport:  "http-post",
 				SourceIP:   clientIP,
 				SourcePort: clientPort,
-				RawBytes:   payload,
+				RawBytes:   bodyBytes,
 				ReceivedAt: time.Now().UTC(),
 			}
-
 			select {
 			case out <- rec:
-				count++
+				count = 1
 			case <-ctx.Done():
 				http.Error(w, `{"error": "server shutting down"}`, http.StatusServiceUnavailable)
 				return
 			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			http.Error(w, fmt.Sprintf(`{"error": "failed to read payload: %v"}`, err), http.StatusBadRequest)
-			return
 		}
 
 		w.Header().Set("Content-Type", "application/json")

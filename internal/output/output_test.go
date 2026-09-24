@@ -139,3 +139,43 @@ func TestMultiSink(t *testing.T) {
 		}
 	}
 }
+
+type FlakySink struct {
+	failCount int
+	calls     int
+}
+
+func (f *FlakySink) Emit(ctx context.Context, event *model.NormalizedEvent) error {
+	f.calls++
+	if f.calls <= f.failCount {
+		return os.ErrDeadlineExceeded
+	}
+	return nil
+}
+func (f *FlakySink) Flush() error { return nil }
+func (f *FlakySink) Close() error { return nil }
+
+func TestRetrySink_BA022(t *testing.T) {
+	ctx := context.Background()
+	evt := sampleEvent("retry-evt")
+
+	// 1. Recoverable failure (fails 2 times, succeeds on 3rd attempt)
+	flaky := &FlakySink{failCount: 2}
+	retrySink := output.NewRetrySink(flaky, 3, 1*time.Millisecond)
+	if err := retrySink.Emit(ctx, evt); err != nil {
+		t.Fatalf("expected retry to succeed on 3rd attempt, got: %v", err)
+	}
+	if flaky.calls != 3 {
+		t.Errorf("expected 3 calls, got %d", flaky.calls)
+	}
+
+	// 2. Unrecoverable failure (fails all attempts)
+	alwaysFails := &FlakySink{failCount: 10}
+	failingRetry := output.NewRetrySink(alwaysFails, 3, 1*time.Millisecond)
+	if err := failingRetry.Emit(ctx, evt); err == nil {
+		t.Fatalf("expected error when all retry attempts exhausted, got nil")
+	}
+	if alwaysFails.calls != 3 {
+		t.Errorf("expected exactly 3 calls, got %d", alwaysFails.calls)
+	}
+}

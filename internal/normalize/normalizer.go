@@ -40,7 +40,7 @@ func (n *Normalizer) Normalize(
 	}
 
 	// 1. Extract and cast fields according to the pack's field specifications
-	extracted, unmapped, err := packs.ExtractAndConvert(pack, decoded)
+	extracted, unmapped, warnings, err := packs.ExtractAndConvert(pack, decoded)
 	if err != nil {
 		return nil, fmt.Errorf("field extraction failed: %w", err)
 	}
@@ -123,8 +123,11 @@ func (n *Normalizer) Normalize(
 		SchemaVersion:     n.schemaVersion,
 		ReceivedTime:      raw.ReceivedAt,
 		Status:            "normalized",
-		Warnings:          []string{},
+		Warnings:          warnings,
 		ProcessingHistory: auditTrail,
+	}
+	if envelope.Warnings == nil {
+		envelope.Warnings = []string{}
 	}
 
 	return &model.NormalizedEvent{
@@ -157,6 +160,7 @@ func setNestedValue(m map[string]any, path string, val any) {
 }
 
 // enrichTaxonomyDefaults provides OCSF standard class/category defaults based on source category.
+// Covers all 11 supported WORM source categories.
 func enrichTaxonomyDefaults(event map[string]any, category string) {
 	switch category {
 	case "network_device":
@@ -176,12 +180,18 @@ func enrichTaxonomyDefaults(event map[string]any, category string) {
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "HTTP Activity"
 		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "HTTP Activity: HTTP Request"
+		}
 	case "os":
 		if _, exists := event["category_name"]; !exists {
 			event["category_name"] = "Authentication"
 		}
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "Authentication"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Authentication: Logon"
 		}
 	case "endpoint":
 		if _, exists := event["category_name"]; !exists {
@@ -190,6 +200,9 @@ func enrichTaxonomyDefaults(event map[string]any, category string) {
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "Security Finding"
 		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Security Finding: Alert"
+		}
 	case "application":
 		if _, exists := event["category_name"]; !exists {
 			event["category_name"] = "Application Activity"
@@ -197,12 +210,68 @@ func enrichTaxonomyDefaults(event map[string]any, category string) {
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "Application Activity"
 		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Application Activity: Generic"
+		}
 	case "database":
 		if _, exists := event["category_name"]; !exists {
 			event["category_name"] = "System Activity"
 		}
 		if _, exists := event["class_name"]; !exists {
 			event["class_name"] = "Database Activity"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Database Activity: Query"
+		}
+	case "cloud":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "Cloud Activity"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "API Activity"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Cloud Activity: API Call"
+		}
+	case "container":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "System Activity"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "Container Lifecycle"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Container Activity: Lifecycle"
+		}
+	case "iam":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "Identity & Access Management"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "Account Change"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "IAM: Account Modification"
+		}
+	case "iot":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "Device Activity"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "Device Status"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Device Activity: Status Report"
+		}
+	case "other":
+		if _, exists := event["category_name"]; !exists {
+			event["category_name"] = "Other Activity"
+		}
+		if _, exists := event["class_name"]; !exists {
+			event["class_name"] = "Base Event"
+		}
+		if _, exists := event["type_name"]; !exists {
+			event["type_name"] = "Other: Generic"
 		}
 	}
 }

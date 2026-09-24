@@ -1,9 +1,11 @@
 package decode
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+	"worm/internal/model"
 )
 
 func loadFixture(t *testing.T, relPath string) []byte {
@@ -420,5 +422,31 @@ func TestRegistryAutoDetection(t *testing.T) {
 				t.Errorf("expected %d records, got %d", tc.expectedRows, len(records))
 			}
 		})
+	}
+}
+
+// MockAmbiguousDecoder is a mock decoder for testing tie-breaking behavior.
+type MockAmbiguousDecoder struct {
+	name  string
+	score float64
+}
+
+func (m *MockAmbiguousDecoder) Name() string                     { return m.name }
+func (m *MockAmbiguousDecoder) Detect(raw []byte) float64        { return m.score }
+func (m *MockAmbiguousDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	return []*model.DecodedRecord{{Format: m.name}}, nil
+}
+
+func TestFormatAmbiguityDetection_BA011(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&MockAmbiguousDecoder{name: "custom_a", score: 0.95})
+	reg.Register(&MockAmbiguousDecoder{name: "custom_b", score: 0.95})
+
+	_, _, err := reg.DetectAndDecode([]byte("ambiguous raw content"))
+	if err == nil {
+		t.Fatalf("expected ErrAmbiguousFormat for tied top decoders, got nil")
+	}
+	if !errors.Is(err, ErrAmbiguousFormat) {
+		t.Errorf("expected ErrAmbiguousFormat error, got: %v", err)
 	}
 }

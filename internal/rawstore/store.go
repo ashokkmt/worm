@@ -59,7 +59,7 @@ func New(dbPath string) (*RawStore, error) {
 }
 
 // CurrentSchemaVersion tracks the active database schema migration version.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 func initSchema(db *sql.DB) error {
 	var version int
@@ -75,6 +75,7 @@ func initSchema(db *sql.DB) error {
 			byte_count INTEGER NOT NULL,
 			transport TEXT NOT NULL,
 			source_ip TEXT NOT NULL,
+			source_port INTEGER NOT NULL DEFAULT 0,
 			received_at TEXT NOT NULL,
 			payload BLOB NOT NULL,
 			status TEXT NOT NULL
@@ -85,6 +86,7 @@ func initSchema(db *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS quarantine (
 			quarantine_id TEXT PRIMARY KEY,
 			raw_id TEXT NOT NULL,
+			record_ordinal INTEGER NOT NULL DEFAULT 0,
 			raw_sha256 TEXT NOT NULL,
 			stage TEXT NOT NULL,
 			reason TEXT NOT NULL,
@@ -102,6 +104,7 @@ func initSchema(db *sql.DB) error {
 		CREATE TABLE IF NOT EXISTS normalized_events (
 			event_id TEXT PRIMARY KEY,
 			raw_id TEXT NOT NULL,
+			record_ordinal INTEGER NOT NULL DEFAULT 0,
 			source_category TEXT NOT NULL,
 			source_id TEXT NOT NULL,
 			severity_id TEXT,
@@ -117,12 +120,25 @@ func initSchema(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_norm_time ON normalized_events(event_time);
 		`
 		if _, err := db.Exec(schema); err != nil {
-			return fmt.Errorf("failed to initialize raw store schema v1: %w", err)
+			return fmt.Errorf("failed to initialize raw store schema v2: %w", err)
 		}
+		version = 2
+	}
 
-		if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d;", CurrentSchemaVersion)); err != nil {
-			return fmt.Errorf("failed to set user_version: %w", err)
+	if version < 2 {
+		migrations := []string{
+			"ALTER TABLE raw_events ADD COLUMN source_port INTEGER NOT NULL DEFAULT 0;",
+			"ALTER TABLE quarantine ADD COLUMN record_ordinal INTEGER NOT NULL DEFAULT 0;",
+			"ALTER TABLE normalized_events ADD COLUMN record_ordinal INTEGER NOT NULL DEFAULT 0;",
 		}
+		for _, m := range migrations {
+			_, _ = db.Exec(m)
+		}
+		version = 2
+	}
+
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d;", CurrentSchemaVersion)); err != nil {
+		return fmt.Errorf("failed to set user_version: %w", err)
 	}
 
 	return nil
@@ -152,14 +168,15 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 		ByteCount:  len(rec.RawBytes),
 		Transport:  rec.Transport,
 		SourceIP:   rec.SourceIP,
+		SourcePort: rec.SourcePort,
 		ReceivedAt: rec.ReceivedAt,
 		Payload:    rec.RawBytes,
 		Status:     model.StatusAccepted,
 	}
 
 	query := `
-	INSERT INTO raw_events (raw_id, raw_sha256, byte_count, transport, source_ip, received_at, payload, status)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO raw_events (raw_id, raw_sha256, byte_count, transport, source_ip, source_port, received_at, payload, status)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 	_, err := s.db.ExecContext(ctx, query,
 		event.RawID,
@@ -167,6 +184,7 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 		event.ByteCount,
 		event.Transport,
 		event.SourceIP,
+		event.SourcePort,
 		event.ReceivedAt.Format(time.RFC3339Nano),
 		event.Payload,
 		string(event.Status),
@@ -181,7 +199,7 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 // Retrieve returns the raw record and exact bytes by raw ID.
 func (s *RawStore) Retrieve(ctx context.Context, rawID string) (*model.RawEvent, error) {
 	query := `
-	SELECT raw_id, raw_sha256, byte_count, transport, source_ip, received_at, payload, status
+	SELECT raw_id, raw_sha256, byte_count, transport, source_ip, source_port, received_at, payload, status
 	FROM raw_events WHERE raw_id = ?;
 	`
 	var (
@@ -196,6 +214,7 @@ func (s *RawStore) Retrieve(ctx context.Context, rawID string) (*model.RawEvent,
 		&evt.ByteCount,
 		&evt.Transport,
 		&evt.SourceIP,
+		&evt.SourcePort,
 		&receivedAt,
 		&evt.Payload,
 		&statusStr,
@@ -259,12 +278,13 @@ func (s *RawStore) Quarantine(ctx context.Context, entry model.QuarantineEntry) 
 
 	candidateStr := strings.Join(entry.CandidatePacks, ",")
 	qQuery := `
-	INSERT INTO quarantine (quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO quarantine (quarantine_id, raw_id, record_ordinal, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
 	_, err = tx.ExecContext(ctx, qQuery,
 		entry.QuarantineID,
 		entry.RawID,
+		entry.RecordOrdinal,
 		entry.RawSHA256,
 		entry.Stage,
 		entry.Reason,
@@ -306,7 +326,7 @@ func (s *RawStore) UpdateStatus(ctx context.Context, rawID string, status model.
 // GetQuarantined retrieves paginated quarantined records.
 func (s *RawStore) GetQuarantined(ctx context.Context, limit, offset int) ([]model.QuarantineEntry, error) {
 	query := `
-	SELECT quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
+	SELECT quarantine_id, raw_id, record_ordinal, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
 	FROM quarantine
 	ORDER BY quarantined_at DESC
 	LIMIT ? OFFSET ?;
@@ -329,6 +349,7 @@ func (s *RawStore) GetQuarantined(ctx context.Context, limit, offset int) ([]mod
 		err := rows.Scan(
 			&e.QuarantineID,
 			&e.RawID,
+			&e.RecordOrdinal,
 			&e.RawSHA256,
 			&e.Stage,
 			&e.Reason,
@@ -361,7 +382,7 @@ func (s *RawStore) GetQuarantined(ctx context.Context, limit, offset int) ([]mod
 // GetQuarantineByID retrieves a single quarantined entry by its quarantine ID.
 func (s *RawStore) GetQuarantineByID(ctx context.Context, qID string) (*model.QuarantineEntry, error) {
 	query := `
-	SELECT quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
+	SELECT quarantine_id, raw_id, record_ordinal, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
 	FROM quarantine
 	WHERE quarantine_id = ?;
 	`
@@ -375,6 +396,7 @@ func (s *RawStore) GetQuarantineByID(ctx context.Context, qID string) (*model.Qu
 	err := s.db.QueryRowContext(ctx, query, qID).Scan(
 		&e.QuarantineID,
 		&e.RawID,
+		&e.RecordOrdinal,
 		&e.RawSHA256,
 		&e.Stage,
 		&e.Reason,
@@ -513,9 +535,9 @@ func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedE
 		msg = mVal
 	}
 
-	// Check if a normalized projection already exists for this raw_id to prevent duplicates on repeated replay
+	// Check if a normalized projection already exists for this raw_id and record_ordinal to prevent duplicates on repeated replay
 	var existingEventID string
-	err = s.db.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id = ? LIMIT 1;", event.Worm.RawID).Scan(&existingEventID)
+	err = s.db.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id = ? AND record_ordinal = ? LIMIT 1;", event.Worm.RawID, event.Worm.RecordOrdinal).Scan(&existingEventID)
 	if err == nil && existingEventID != "" {
 		event.Worm.EventID = existingEventID
 		if updatedData, marshalErr := json.Marshal(event); marshalErr == nil {
@@ -528,8 +550,8 @@ func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedE
 
 	query := `
 	INSERT INTO normalized_events (
-		event_id, raw_id, source_category, source_id, severity_id, activity_name, message, event_time, received_time, event_json, event_sha256
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		event_id, raw_id, record_ordinal, source_category, source_id, severity_id, activity_name, message, event_time, received_time, event_json, event_sha256
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(event_id) DO UPDATE SET
 		event_json = excluded.event_json,
 		event_sha256 = excluded.event_sha256,
@@ -538,6 +560,7 @@ func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedE
 	_, err = s.db.ExecContext(ctx, query,
 		event.Worm.EventID,
 		event.Worm.RawID,
+		event.Worm.RecordOrdinal,
 		event.Worm.SourceCategory,
 		event.Worm.SourceID,
 		severityStr,
@@ -754,7 +777,7 @@ func (s *RawStore) ListQuarantinePaged(ctx context.Context, limit, offset int) (
 	}
 
 	query := `
-	SELECT quarantine_id, raw_id, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
+	SELECT quarantine_id, raw_id, record_ordinal, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at, replayed_at
 	FROM quarantine
 	ORDER BY quarantined_at DESC
 	LIMIT ? OFFSET ?;
@@ -777,6 +800,7 @@ func (s *RawStore) ListQuarantinePaged(ctx context.Context, limit, offset int) (
 		err := rows.Scan(
 			&e.QuarantineID,
 			&e.RawID,
+			&e.RecordOrdinal,
 			&e.RawSHA256,
 			&e.Stage,
 			&e.Reason,
@@ -844,6 +868,11 @@ func (s *RawStore) ListSources(ctx context.Context) ([]map[string]any, error) {
 		})
 	}
 	return sources, nil
+}
+
+// Ping verifies that the underlying SQLite database handle is healthy.
+func (s *RawStore) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }
 
 // Close closes the underlying SQLite database handle.

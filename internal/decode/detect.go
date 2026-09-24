@@ -1,10 +1,22 @@
 package decode
 
 import (
+	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"worm/internal/model"
 )
+
+// ErrAmbiguousFormat indicates that multiple format decoders matched with identical top confidence.
+var ErrAmbiguousFormat = errors.New("ambiguous format detection: multiple decoders matched with equal top confidence")
+
+// CandidateScore records an evaluation result for a candidate decoder.
+type CandidateScore struct {
+	Name       string
+	Decoder    Decoder
+	Confidence float64
+}
 
 // Registry manages the collection of active format decoders.
 type Registry struct {
@@ -35,42 +47,77 @@ func (r *Registry) Register(d Decoder) {
 	r.decoders = append(r.decoders, d)
 }
 
-// Detect evaluates raw bytes across all registered decoders and returns
-// the decoder with the highest confidence score above the threshold.
-func (r *Registry) Detect(raw []byte) (Decoder, float64) {
+// DetectRanked evaluates raw bytes across all registered decoders and returns
+// candidate scores sorted by confidence in descending order.
+func (r *Registry) DetectRanked(raw []byte) []CandidateScore {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var bestDecoder Decoder
-	var highestConfidence float64
-
+	var candidates []CandidateScore
 	for _, d := range r.decoders {
 		conf := d.Detect(raw)
-		if conf > highestConfidence {
-			highestConfidence = conf
-			bestDecoder = d
+		if conf >= 0.50 {
+			candidates = append(candidates, CandidateScore{
+				Name:       d.Name(),
+				Decoder:    d,
+				Confidence: conf,
+			})
 		}
 	}
 
-	// 0.50 minimum confidence threshold
-	if highestConfidence < 0.50 {
+	// Sort candidates: highest confidence first.
+	// For equal confidence, structured decoders (syslog, json, cef, csv) precede generic "text".
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].Confidence != candidates[j].Confidence {
+			return candidates[i].Confidence > candidates[j].Confidence
+		}
+		if candidates[i].Name == "text" && candidates[j].Name != "text" {
+			return false
+		}
+		if candidates[j].Name == "text" && candidates[i].Name != "text" {
+			return true
+		}
+		// Syslog envelope has outer precedence
+		if candidates[i].Name == "syslog" {
+			return true
+		}
+		return candidates[i].Name < candidates[j].Name
+	})
+
+	return candidates
+}
+
+// Detect evaluates raw bytes across all registered decoders and returns
+// the winning decoder with the highest confidence score above the threshold.
+func (r *Registry) Detect(raw []byte) (Decoder, float64) {
+	candidates := r.DetectRanked(raw)
+	if len(candidates) == 0 {
 		return nil, 0.0
 	}
-
-	return bestDecoder, highestConfidence
+	return candidates[0].Decoder, candidates[0].Confidence
 }
 
 // DetectAndDecode auto-detects the format and parses the raw bytes.
 func (r *Registry) DetectAndDecode(raw []byte) (Decoder, []*model.DecodedRecord, error) {
-	d, conf := r.Detect(raw)
-	if d == nil || conf < 0.50 {
+	candidates := r.DetectRanked(raw)
+	if len(candidates) == 0 {
 		return nil, nil, fmt.Errorf("no decoder recognized raw byte format (confidence below 0.50)")
 	}
 
-	records, err := d.Decode(raw)
-	if err != nil {
-		return d, nil, fmt.Errorf("%s decoder failed: %w", d.Name(), err)
+	best := candidates[0]
+
+	// Check for true ambiguity between multiple top non-text decoders with equal score
+	if len(candidates) > 1 && candidates[0].Confidence == candidates[1].Confidence {
+		if candidates[0].Name != "text" && candidates[1].Name != "text" && candidates[0].Name != "syslog" {
+			return nil, nil, fmt.Errorf("%w: candidates %s and %s both scored %0.2f",
+				ErrAmbiguousFormat, candidates[0].Name, candidates[1].Name, candidates[0].Confidence)
+		}
 	}
 
-	return d, records, nil
+	records, err := best.Decoder.Decode(raw)
+	if err != nil {
+		return best.Decoder, nil, fmt.Errorf("%s decoder failed: %w", best.Name, err)
+	}
+
+	return best.Decoder, records, nil
 }

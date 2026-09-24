@@ -17,12 +17,13 @@ type IngestAdapter interface {
 // Manager coordinates multiple ingestion adapters, routing records to a single channel.
 type Manager struct {
 	mu       sync.Mutex
-	adapters []IngestAdapter
-	out      chan model.IngestedRecord
-	ctx      context.Context
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
-	running  bool
+	adapters    []IngestAdapter
+	adapterErrs map[string]error
+	out         chan model.IngestedRecord
+	ctx         context.Context
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
+	running     bool
 }
 
 // NewManager creates a new adapter manager with the given output channel capacity.
@@ -31,8 +32,9 @@ func NewManager(bufferSize int) *Manager {
 		bufferSize = 1000
 	}
 	return &Manager{
-		adapters: make([]IngestAdapter, 0),
-		out:      make(chan model.IngestedRecord, bufferSize),
+		adapters:    make([]IngestAdapter, 0),
+		adapterErrs: make(map[string]error),
+		out:         make(chan model.IngestedRecord, bufferSize),
 	}
 }
 
@@ -53,6 +55,19 @@ func (m *Manager) Inbound() chan<- model.IngestedRecord {
 	return m.out
 }
 
+// AdapterErrors returns a snapshot of errors recorded by adapters.
+func (m *Manager) AdapterErrors() map[string]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	res := make(map[string]string, len(m.adapterErrs))
+	for k, v := range m.adapterErrs {
+		if v != nil {
+			res[k] = v.Error()
+		}
+	}
+	return res
+}
+
 // Start launches all registered adapters.
 func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
@@ -70,8 +85,10 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.wg.Add(1)
 		go func() {
 			defer m.wg.Done()
-			if err := ad.Start(m.ctx, m.out); err != nil {
-				// Adapter stopped or error handled internally
+			if err := ad.Start(m.ctx, m.out); err != nil && m.ctx.Err() == nil {
+				m.mu.Lock()
+				m.adapterErrs[ad.Name()] = err
+				m.mu.Unlock()
 			}
 		}()
 	}

@@ -42,6 +42,10 @@ func (d *CEFDecoder) Detect(raw []byte) float64 {
 
 // Decode parses a raw CEF payload into a DecodedRecord.
 func (d *CEFDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	if len(raw) > MaxPayloadBytes {
+		return nil, fmt.Errorf("CEF payload %d bytes exceeds maximum limit of %d", len(raw), MaxPayloadBytes)
+	}
+
 	s := strings.TrimSpace(string(raw))
 	if len(s) == 0 {
 		return nil, errors.New("empty CEF payload")

@@ -39,18 +39,25 @@ type ConfigInfo struct {
 	Workers    int    `json:"workers"`
 	AirGapped  bool   `json:"air_gapped"`
 	Version    string `json:"version"`
+	AdminToken string `json:"admin_token,omitempty"`
+}
+
+// IngestTracker provides adapter operational status for health checks.
+type IngestTracker interface {
+	AdapterErrors() map[string]string
 }
 
 // Server provides the Management Control Plane REST API and embedded UI.
 type Server struct {
-	addr        string
-	store       *rawstore.RawStore
-	pipe        *pipeline.Pipeline
-	packManager *packs.SnapshotManager
-	packsDir    string
-	cfgInfo     ConfigInfo
-	distFS      fs.FS
-	startTime   time.Time
+	addr          string
+	store         *rawstore.RawStore
+	pipe          *pipeline.Pipeline
+	packManager   *packs.SnapshotManager
+	packsDir      string
+	cfgInfo       ConfigInfo
+	distFS        fs.FS
+	startTime     time.Time
+	ingestTracker IngestTracker
 
 	statsMu      sync.Mutex
 	lastAccepted int64
@@ -77,6 +84,10 @@ func NewServer(
 	cfgInfo.UIAddress = addr
 	cfgInfo.AirGapped = true
 
+	if packMgr != nil && packsDir != "" {
+		packMgr.SetPacksDir(packsDir)
+	}
+
 	s := &Server{
 		addr:        addr,
 		store:       store,
@@ -92,6 +103,34 @@ func NewServer(
 	return s
 }
 
+// SetIngestTracker attaches an adapter tracker for readiness reporting.
+func (s *Server) SetIngestTracker(t IngestTracker) {
+	s.ingestTracker = t
+}
+
+func (s *Server) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		token := s.cfgInfo.AdminToken
+		if token == "" {
+			token = os.Getenv("WORM_ADMIN_TOKEN")
+		}
+		if token != "" {
+			provided := r.Header.Get("X-WORM-Admin-Key")
+			if provided == "" {
+				authHeader := r.Header.Get("Authorization")
+				if strings.HasPrefix(authHeader, "Bearer ") {
+					provided = strings.TrimPrefix(authHeader, "Bearer ")
+				}
+			}
+			if provided != token {
+				s.jsonError(w, http.StatusUnauthorized, "unauthorized: invalid or missing admin token")
+				return
+			}
+		}
+		next(w, r)
+	}
+}
+
 // Handler returns the http.Handler for all API and static routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -103,17 +142,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/events/{id}", s.handleGetEvent)
 	mux.HandleFunc("GET /api/v1/events/{id}/trace", s.handleEventTrace)
 	mux.HandleFunc("POST /api/v1/events/{id}/verify", s.handleVerifyEvent)
-	mux.HandleFunc("GET /api/v1/raw/{id}", s.handleGetRaw)
-	mux.HandleFunc("POST /api/v1/raw/{id}/verify", s.handleVerifyRaw)
+	mux.HandleFunc("GET /api/v1/raw/{id}", s.requireAdminAuth(s.handleGetRaw))
+	mux.HandleFunc("POST /api/v1/raw/{id}/verify", s.requireAdminAuth(s.handleVerifyRaw))
 	mux.HandleFunc("GET /api/v1/quarantine", s.handleListQuarantine)
-	mux.HandleFunc("POST /api/v1/quarantine/replay-all", s.handleReplayAllQuarantine)
-	mux.HandleFunc("POST /api/v1/quarantine/{id}/replay", s.handleReplayQuarantine)
+	mux.HandleFunc("POST /api/v1/quarantine/replay-all", s.requireAdminAuth(s.handleReplayAllQuarantine))
+	mux.HandleFunc("POST /api/v1/quarantine/{id}/replay", s.requireAdminAuth(s.handleReplayQuarantine))
 	mux.HandleFunc("GET /api/v1/sources", s.handleListSources)
 	mux.HandleFunc("GET /api/v1/packs", s.handleListPacks)
 	mux.HandleFunc("GET /api/v1/packs/{name}", s.handleGetPack)
 	mux.HandleFunc("POST /api/v1/packs/validate", s.handleValidatePack)
-	mux.HandleFunc("POST /api/v1/packs/activate", s.handleActivatePack)
-	mux.HandleFunc("POST /api/v1/packs/rollback", s.handleRollbackPack)
+	mux.HandleFunc("POST /api/v1/packs/activate", s.requireAdminAuth(s.handleActivatePack))
+	mux.HandleFunc("POST /api/v1/packs/rollback", s.requireAdminAuth(s.handleRollbackPack))
 	mux.HandleFunc("GET /api/v1/config", s.handleConfig)
 
 	// Static UI routing with SPA client-side fallback
@@ -164,12 +203,30 @@ func (s *Server) Addr() string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(s.startTime).Seconds()
+	sqliteStatus := "connected"
+	if s.store != nil {
+		if err := s.store.Ping(r.Context()); err != nil {
+			sqliteStatus = "unreachable: " + err.Error()
+		}
+	}
+
+	adapterErrors := map[string]string{}
+	if s.ingestTracker != nil {
+		adapterErrors = s.ingestTracker.AdapterErrors()
+	}
+
+	status := "ok"
+	if sqliteStatus != "connected" || len(adapterErrors) > 0 {
+		status = "degraded"
+	}
+
 	s.jsonResponse(w, http.StatusOK, map[string]any{
-		"status":         "ok",
+		"status":         status,
 		"version":        s.cfgInfo.Version,
 		"air_gapped":     true,
 		"uptime_seconds": uptime,
-		"sqlite_status":  "connected",
+		"sqlite_status":  sqliteStatus,
+		"adapter_errors": adapterErrors,
 	})
 }
 
@@ -687,13 +744,13 @@ func (s *Server) handleValidatePack(w http.ResponseWriter, r *http.Request) {
 			matches := pack.Matches(decRec)
 			resp["match"] = matches
 			if matches {
-				extracted := make(map[string]any)
-				for targetField, rule := range pack.Spec.Fields {
-					if val, ok := decRec.Fields[rule.From]; ok {
-						extracted[targetField] = val
-					}
+				extracted, unmapped, warnings, err := packs.ExtractAndConvert(pack, decRec)
+				if err != nil {
+					resp["extraction_error"] = err.Error()
 				}
 				resp["extracted_fields"] = extracted
+				resp["unmapped_fields"] = unmapped
+				resp["warnings"] = warnings
 			}
 		}
 	}
@@ -724,51 +781,25 @@ func (s *Server) handleActivatePack(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Persist to packs directory if available
-	if s.packsDir != "" {
-		cleanBase := filepath.Clean(s.packsDir)
-		if strings.ContainsAny(req.Filename, "/\\") || strings.Contains(req.Filename, "..") {
-			s.jsonError(w, http.StatusBadRequest, "invalid pack filename: path traversal characters detected")
-			return
-		}
-		if strings.ContainsAny(newPack.Metadata.Name, "/\\") || strings.Contains(newPack.Metadata.Name, "..") {
-			s.jsonError(w, http.StatusBadRequest, "invalid pack name: path traversal characters detected")
-			return
-		}
-
-		fn := req.Filename
-		if fn == "" {
-			fn = newPack.Metadata.Name + ".yaml"
-		}
-		fn = filepath.Base(fn)
-		if fn == "." || fn == "" {
-			s.jsonError(w, http.StatusBadRequest, "invalid pack filename")
-			return
-		}
-		targetPath := filepath.Join(cleanBase, fn)
-		rel, err := filepath.Rel(cleanBase, targetPath)
-		if err != nil || strings.HasPrefix(rel, "..") {
-			s.jsonError(w, http.StatusBadRequest, "path traversal blocked")
-			return
-		}
-
-		if err := os.WriteFile(targetPath, []byte(req.YamlContent), 0644); err != nil {
-			log.Printf("ERROR: failed to persist pack file to %s: %v", targetPath, err)
-			s.jsonError(w, http.StatusInternalServerError, "failed to persist pack file")
-			return
-		}
+	fn := req.Filename
+	if fn == "" {
+		fn = newPack.Metadata.Name + ".yaml"
 	}
 
-	// Reload snapshot
-	if s.packsDir != "" {
-		snap, err := packs.LoadDir(s.packsDir)
-		if err != nil {
-			s.jsonError(w, http.StatusInternalServerError, "failed to reload packs: "+err.Error())
+	// Transactional apply to disk and runtime activation
+	if s.packManager != nil && s.packsDir != "" {
+		if _, err := s.packManager.ApplyPackFile(fn, []byte(req.YamlContent)); err != nil {
+			s.jsonError(w, http.StatusBadRequest, "failed to apply pack: "+err.Error())
 			return
 		}
-		if s.packManager != nil {
-			_ = s.packManager.Activate(snap)
+	} else if s.packManager != nil {
+		// In-memory only manager
+		snap, err := packs.NewSnapshot(fmt.Sprintf("snap-%d", time.Now().UnixNano()), append(s.packManager.Active().ListPacks(), newPack))
+		if err != nil {
+			s.jsonError(w, http.StatusBadRequest, "failed to activate snapshot: "+err.Error())
+			return
 		}
+		_ = s.packManager.Activate(snap)
 	}
 
 	s.jsonResponse(w, http.StatusOK, map[string]any{

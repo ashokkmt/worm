@@ -105,6 +105,7 @@ func main() {
 
 	// Management UI and Control Plane flag
 	uiAddr := flag.String("ui", ":9090", "Address for Management Web UI and Control Plane API (:9090 default, 'none' to disable)")
+	adminToken := flag.String("admin-token", "", "Optional secret token for authenticating control-plane mutation API routes")
 
 	flag.Parse()
 
@@ -313,8 +314,10 @@ func main() {
 			DBPath:     *dbPath,
 			Workers:    *workers,
 			Version:    "1.0.4",
+			AdminToken: *adminToken,
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
+		uiServer.SetIngestTracker(mgr)
 		if err := uiServer.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
 		} else {

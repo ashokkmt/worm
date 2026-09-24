@@ -463,3 +463,60 @@ func TestAPI_StaticAndSPARouting(t *testing.T) {
 		t.Fatalf("expected SPA fallback to index.html, got: %s", rec.Body.String())
 	}
 }
+
+func TestAPI_AdminTokenAuth_BA023(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "worm_auth_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	dbPath := filepath.Join(tempDir, "worm.db")
+	store, err := rawstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to open raw store: %v", err)
+	}
+	defer store.Close()
+
+	cfg := api.ConfigInfo{
+		Version:    "1.0.0",
+		AdminToken: "super-secret-admin-token",
+	}
+	srv := api.NewServer("127.0.0.1:0", store, nil, nil, "", cfg, nil)
+	handler := srv.Handler()
+
+	// 1. Without token on raw endpoint -> 401 Unauthorized
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/raw/worm-raw-nonexistent", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized without token, got %d", rec.Code)
+	}
+
+	// 2. With wrong token -> 401 Unauthorized
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/raw/worm-raw-nonexistent", nil)
+	req.Header.Set("X-WORM-Admin-Key", "wrong-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized with wrong token, got %d", rec.Code)
+	}
+
+	// 3. With correct token via header -> Allowed past auth (404 since record doesn't exist)
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/raw/worm-raw-nonexistent", nil)
+	req.Header.Set("X-WORM-Admin-Key", "super-secret-admin-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found past auth, got %d", rec.Code)
+	}
+
+	// 4. With correct token via Bearer -> Allowed past auth
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/raw/worm-raw-nonexistent", nil)
+	req.Header.Set("Authorization", "Bearer super-secret-admin-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 Not Found with Bearer token, got %d", rec.Code)
+	}
+}

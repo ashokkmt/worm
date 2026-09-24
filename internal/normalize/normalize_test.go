@@ -229,7 +229,9 @@ func TestValidator_SchemaValidation(t *testing.T) {
 				RawSHA256: "abc123hash",
 			},
 			OCSF: map[string]any{
-				"time": int64(1789559400000),
+				"category_name": "Network Activity",
+				"class_name":    "Network Activity",
+				"time":          int64(1789559400000),
 				"src_endpoint": map[string]any{
 					"ip":   "10.0.1.50",
 					"port": int64(443),
@@ -281,6 +283,64 @@ func TestValidator_SchemaValidation(t *testing.T) {
 	badSev.OCSF["severity_id"] = int64(99)
 	if err := v.Validate(badSev); err == nil {
 		t.Errorf("expected severity 99 to fail, got nil")
+	}
+
+	// 7. Missing category_name fails (BA-017)
+	missingCat := baseNorm()
+	delete(missingCat.OCSF, "category_name")
+	if err := v.Validate(missingCat); err == nil {
+		t.Errorf("expected missing category_name to fail, got nil")
+	}
+
+	// 8. Missing class_name fails (BA-017)
+	missingClass := baseNorm()
+	delete(missingClass.OCSF, "class_name")
+	if err := v.Validate(missingClass); err == nil {
+		t.Errorf("expected missing class_name to fail, got nil")
+	}
+}
+
+func TestNormalize_OptionalConversionWarnings_BA016(t *testing.T) {
+	norm := normalize.NewNormalizer()
+	pack := &packs.ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   packs.PackMetadata{Name: "warn-test", Version: "1.0.0"},
+		Spec: packs.PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          packs.MatchRule{Contains: "warn"},
+			Fields: map[string]packs.FieldRule{
+				"bad_int": {From: "bad_int", Type: "integer", Required: false},
+				"time":    {From: "time", Type: "timestamp", Required: true},
+			},
+			Map: map[string]string{
+				"bad_int": "event.severity_id",
+				"time":    "event.time",
+			},
+		},
+	}
+
+	raw := &model.RawEvent{
+		RawID:      "worm-raw-test-01",
+		RawSHA256:  "sha256abc",
+		ByteCount:  50,
+		ReceivedAt: time.Now().UTC(),
+	}
+	dec := &model.DecodedRecord{
+		Format: "json",
+		Fields: map[string]any{
+			"bad_int": "NOT_AN_INTEGER",
+			"time":    "2026-09-24T12:00:00Z",
+		},
+	}
+
+	res, err := norm.Normalize(raw, dec, pack, nil)
+	if err != nil {
+		t.Fatalf("expected non-required field error to be tolerated, got: %v", err)
+	}
+	if len(res.Worm.Warnings) == 0 {
+		t.Errorf("expected warnings in WORM envelope for optional conversion failure, got none")
 	}
 }
 
@@ -355,7 +415,7 @@ func TestPipeline_QuarantineAndReplay(t *testing.T) {
 	sink := pipeline.NewMemorySink()
 
 	// 1. Initially start with an EMPTY snapshot (no packs loaded)
-	emptySnap := packs.NewSnapshot("v0-empty", []*packs.ParserPack{})
+	emptySnap := packs.MustNewSnapshot("v0-empty", []*packs.ParserPack{})
 	packManager := packs.NewSnapshotManager(emptySnap)
 
 	p := pipeline.New(pipeline.Config{

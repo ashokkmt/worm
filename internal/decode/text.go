@@ -2,6 +2,7 @@ package decode
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
@@ -60,6 +61,10 @@ func (d *TextDecoder) Detect(raw []byte) float64 {
 
 // Decode parses a raw text payload into a DecodedRecord.
 func (d *TextDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	if len(raw) > MaxPayloadBytes {
+		return nil, fmt.Errorf("text payload %d bytes exceeds maximum limit of %d", len(raw), MaxPayloadBytes)
+	}
+
 	if len(raw) == 0 {
 		return nil, errors.New("empty text payload")
 	}
@@ -67,6 +72,9 @@ func (d *TextDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	s := strings.TrimSpace(string(raw))
 	if len(s) == 0 {
 		return nil, errors.New("empty text string")
+	}
+	if len(s) > MaxTextLine {
+		return nil, fmt.Errorf("text line length %d exceeds maximum limit of %d", len(s), MaxTextLine)
 	}
 
 	fields := make(map[string]any)

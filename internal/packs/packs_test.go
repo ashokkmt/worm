@@ -299,7 +299,7 @@ func TestSnapshot_AmbiguousSource(t *testing.T) {
 	_ = pack1.Validate()
 	_ = pack2.Validate()
 
-	snap := NewSnapshot("test-snap", []*ParserPack{pack1, pack2})
+	snap := MustNewSnapshot("test-snap", []*ParserPack{pack1, pack2})
 
 	rec := &model.DecodedRecord{
 		Format:     "syslog",
@@ -338,8 +338,8 @@ func TestSnapshotManager_ActivationAndRollback(t *testing.T) {
 		},
 	}
 
-	snap1 := NewSnapshot("v1", []*ParserPack{packA})
-	snap2 := NewSnapshot("v2", []*ParserPack{packA, packB})
+	snap1 := MustNewSnapshot("v1", []*ParserPack{packA})
+	snap2 := MustNewSnapshot("v2", []*ParserPack{packA, packB})
 
 	mgr := NewSnapshotManager(snap1)
 	if mgr.Active().Version() != "v1" {
@@ -432,10 +432,11 @@ func TestExtractAndConvert(t *testing.T) {
 		},
 	}
 
-	extracted, unmapped, err := ExtractAndConvert(pack, rec)
+	extracted, unmapped, warnings, err := ExtractAndConvert(pack, rec)
 	if err != nil {
 		t.Fatalf("ExtractAndConvert failed: %v", err)
 	}
+	_ = warnings
 
 	// Verify types
 	if ip, ok := extracted["src"].(string); !ok || ip != "192.168.1.100" {
@@ -495,8 +496,139 @@ func TestExtractAndConvert_RequiredMissing(t *testing.T) {
 		Fields: map[string]any{"other_field": "val"},
 	}
 
-	_, _, err := ExtractAndConvert(pack, rec)
+	_, _, _, err := ExtractAndConvert(pack, rec)
 	if err == nil {
 		t.Errorf("expected error when required field is missing, got nil")
+	}
+}
+
+func TestSnapshot_DuplicatePackRejection_BA014(t *testing.T) {
+	pack1 := &ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   PackMetadata{Name: "duplicate-pack", Version: "1.0.0"},
+		Spec: PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          MatchRule{Contains: "app1"},
+			Fields:         map[string]FieldRule{},
+		},
+	}
+	pack2 := &ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   PackMetadata{Name: "duplicate-pack", Version: "1.0.1"},
+		Spec: PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          MatchRule{Contains: "app2"},
+			Fields:         map[string]FieldRule{},
+		},
+	}
+
+	_, err := NewSnapshot("v-dup", []*ParserPack{pack1, pack2})
+	if err == nil {
+		t.Fatalf("expected error when duplicate pack name is provided to NewSnapshot, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate parser pack name") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+
+	snap := MustNewSnapshot("v-single", []*ParserPack{pack1})
+	if snap.Digest() == "" {
+		t.Errorf("expected non-empty digest for snapshot")
+	}
+}
+
+func TestPackValidation_BA013(t *testing.T) {
+	// 1. Invalid pack name
+	packInvalidName := &ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   PackMetadata{Name: "Invalid_Pack_Name!", Version: "1.0.0"},
+		Spec: PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          MatchRule{Contains: "foo"},
+			Fields:         map[string]FieldRule{},
+		},
+	}
+	if err := packInvalidName.Validate(); err == nil {
+		t.Errorf("expected error for invalid pack name regex, got nil")
+	}
+
+	// 2. Invalid semver
+	packInvalidSemver := &ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   PackMetadata{Name: "valid-pack", Version: "1-not-semver"},
+		Spec: PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          MatchRule{Contains: "foo"},
+			Fields:         map[string]FieldRule{},
+		},
+	}
+	if err := packInvalidSemver.Validate(); err == nil {
+		t.Errorf("expected error for invalid semver, got nil")
+	}
+
+	// 3. Map target not starting with event.
+	packInvalidMapTarget := &ParserPack{
+		APIVersion: "worm.io/v1",
+		Kind:       "LogSource",
+		Metadata:   PackMetadata{Name: "valid-pack", Version: "1.0.0"},
+		Spec: PackSpec{
+			SourceCategory: "application",
+			Format:         "json",
+			Match:          MatchRule{Contains: "foo"},
+			Fields: map[string]FieldRule{
+				"raw_f": {From: "raw_f", Type: "string"},
+			},
+			Map: map[string]string{
+				"raw_f": "invalid.target.path",
+			},
+		},
+	}
+	if err := packInvalidMapTarget.Validate(); err == nil {
+		t.Errorf("expected error for map target not starting with 'event.', got nil")
+	}
+}
+
+func TestNestedFieldLookup_BA015(t *testing.T) {
+	rec := &model.DecodedRecord{
+		Format: "json",
+		Fields: map[string]any{
+			"user": map[string]any{
+				"profile": map[string]any{
+					"email": "user@example.com",
+					"id":    12345,
+				},
+			},
+			"status": "active",
+		},
+	}
+
+	// Test nested lookup
+	val, ok := LookupField(rec, "user.profile.email")
+	if !ok || val != "user@example.com" {
+		t.Errorf("expected 'user@example.com', got %v (found=%v)", val, ok)
+	}
+
+	idVal, ok := LookupField(rec, "user.profile.id")
+	if !ok || idVal != 12345 {
+		t.Errorf("expected 12345, got %v (found=%v)", idVal, ok)
+	}
+
+	// Test flat lookup still works
+	statusVal, ok := LookupField(rec, "status")
+	if !ok || statusVal != "active" {
+		t.Errorf("expected 'active', got %v (found=%v)", statusVal, ok)
+	}
+
+	// Non-existent path
+	_, ok = LookupField(rec, "user.profile.nonexistent")
+	if ok {
+		t.Errorf("expected nonexistent path to return false")
 	}
 }

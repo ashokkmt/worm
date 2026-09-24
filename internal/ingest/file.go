@@ -119,29 +119,39 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 
 	ext := strings.ToLower(filepath.Ext(filePath))
 
-	// For tabular CSV files and JSON documents/arrays, the whole file content
+	// For tabular CSV files, JSON documents/arrays, and XML documents, the whole file content
 	// preserves structural headers/schemas for decoders to split into child records.
-	if ext == ".csv" || ext == ".json" {
+	if ext == ".csv" || ext == ".json" || ext == ".xml" {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			return fmt.Errorf("failed to read file %s: %w", filePath, err)
 		}
 
-		trimmed := bytes.TrimSpace(data)
-		if len(trimmed) == 0 {
+		if len(data) == 0 {
 			return nil
 		}
 
+		ackChan := make(chan error, 1)
 		rec := model.IngestedRecord{
 			Transport:  "file",
 			SourceIP:   filepath.Base(filePath),
 			SourcePort: 0,
-			RawBytes:   trimmed,
+			RawBytes:   data,
 			ReceivedAt: time.Now().UTC(),
+			Ack:        ackChan,
 		}
 
 		select {
 		case out <- rec:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		select {
+		case ackErr := <-ackChan:
+			if ackErr != nil {
+				return fmt.Errorf("downstream raw commit failed for %s: %w", filePath, ackErr)
+			}
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
@@ -174,16 +184,27 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 		payload := make([]byte, len(line))
 		copy(payload, line)
 
+		ackChan := make(chan error, 1)
 		rec := model.IngestedRecord{
 			Transport:  "file",
 			SourceIP:   filepath.Base(filePath),
 			SourcePort: 0,
 			RawBytes:   payload,
 			ReceivedAt: time.Now().UTC(),
+			Ack:        ackChan,
 		}
 
 		select {
 		case out <- rec:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+
+		select {
+		case ackErr := <-ackChan:
+			if ackErr != nil {
+				return fmt.Errorf("downstream raw commit failed for line in %s: %w", filePath, ackErr)
+			}
 		case <-ctx.Done():
 			return ctx.Err()
 		}

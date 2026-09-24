@@ -3,7 +3,9 @@ package decode
 import (
 	"bytes"
 	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"worm/internal/model"
 )
@@ -21,7 +23,26 @@ func (c *CSVDecoder) Name() string {
 	return "csv"
 }
 
-// Detect checks if the content exhibits consistent comma-delimited tabular structure.
+// detectDelimiter determines the most likely delimiter from candidate delimiters.
+func (c *CSVDecoder) detectDelimiter(line []byte) rune {
+	if c.Comma != 0 && c.Comma != ',' {
+		return c.Comma
+	}
+	candidates := []rune{',', '\t', ';', '|'}
+	bestDelim := ','
+	bestCount := 0
+
+	for _, d := range candidates {
+		cnt := bytes.Count(line, []byte(string(d)))
+		if cnt > bestCount {
+			bestCount = cnt
+			bestDelim = d
+		}
+	}
+	return bestDelim
+}
+
+// Detect checks if the content exhibits consistent delimited tabular structure.
 func (c *CSVDecoder) Detect(raw []byte) float64 {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
@@ -38,15 +59,21 @@ func (c *CSVDecoder) Detect(raw []byte) float64 {
 	}
 
 	lines := bytes.SplitN(trimmed, []byte("\n"), 3)
-	if len(lines) < 2 {
+	delim := c.detectDelimiter(lines[0])
+
+	c1 := bytes.Count(lines[0], []byte(string(delim)))
+	if c1 == 0 {
 		return 0.0
 	}
 
-	c1 := bytes.Count(lines[0], []byte{','})
-	c2 := bytes.Count(lines[1], []byte{','})
-
-	if c1 >= 1 && c1 == c2 {
-		return 0.85
+	if len(lines) >= 2 {
+		c2 := bytes.Count(lines[1], []byte(string(delim)))
+		if c1 == c2 {
+			return 0.85
+		}
+	} else if len(lines) == 1 && c1 >= 1 {
+		// Header-only CSV
+		return 0.55
 	}
 
 	return 0.0
@@ -54,38 +81,57 @@ func (c *CSVDecoder) Detect(raw []byte) float64 {
 
 // Decode splits CSV rows into individual child DecodedRecords mapped to header columns.
 func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
+	if len(raw) > MaxPayloadBytes {
+		return nil, fmt.Errorf("CSV payload %d bytes exceeds maximum limit of %d", len(raw), MaxPayloadBytes)
+	}
+
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
 		return nil, fmt.Errorf("empty CSV payload")
 	}
 
+	lines := bytes.SplitN(trimmed, []byte("\n"), 2)
+	delim := c.detectDelimiter(lines[0])
+
 	reader := csv.NewReader(bytes.NewReader(trimmed))
-	reader.Comma = c.Comma
+	reader.Comma = delim
 	reader.TrimLeadingSpace = true
-
-	allRows, err := reader.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("malformed CSV: %w", err)
-	}
-
-	if len(allRows) == 0 {
-		return nil, fmt.Errorf("empty CSV document")
-	}
+	reader.ReuseRecord = false
 
 	// First row represents column headers
-	rawHeaders := allRows[0]
+	rawHeaders, err := reader.Read()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("empty CSV document")
+		}
+		return nil, fmt.Errorf("malformed CSV header: %w", err)
+	}
+
+	if len(rawHeaders) > MaxFields {
+		return nil, fmt.Errorf("CSV column count %d exceeds maximum limit of %d", len(rawHeaders), MaxFields)
+	}
+
 	headers := make([]string, len(rawHeaders))
 	for i, h := range rawHeaders {
 		headers[i] = strings.TrimSpace(h)
 	}
 
-	if len(allRows) == 1 {
-		// Only headers, zero data rows
-		return []*model.DecodedRecord{}, nil
-	}
+	var records []*model.DecodedRecord
+	rowIdx := 0
 
-	records := make([]*model.DecodedRecord, 0, len(allRows)-1)
-	for rowIdx, row := range allRows[1:] {
+	for {
+		row, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, fmt.Errorf("malformed CSV row %d: %w", rowIdx+1, err)
+		}
+
+		if len(records) >= MaxChildren {
+			return nil, fmt.Errorf("CSV record count exceeded maximum allowed limit of %d child records", MaxChildren)
+		}
+
 		fields := make(map[string]any, len(headers))
 		for colIdx, colVal := range row {
 			if colIdx < len(headers) {
@@ -95,7 +141,7 @@ func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			}
 		}
 
-		rawRowLine := strings.Join(row, string(c.Comma))
+		rawRowLine := strings.Join(row, string(delim))
 
 		records = append(records, &model.DecodedRecord{
 			RecordOrdinal: rowIdx,
@@ -103,10 +149,12 @@ func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			Headers: map[string]any{
 				"csv_row":      rowIdx + 1,
 				"column_count": len(headers),
+				"delimiter":    string(delim),
 			},
 			Fields:     fields,
 			RawPayload: []byte(rawRowLine),
 		})
+		rowIdx++
 	}
 
 	return records, nil
