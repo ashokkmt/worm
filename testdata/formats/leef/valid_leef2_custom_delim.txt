@@ -1,0 +1,1 @@
+LEEF:2.0|VendorPerimeter|FirewallAppliance|v3.5|DENY_DROP|^|src=10.0.1.20^dst=172.16.0.4^proto=TCP^dstPort=80^msg=Packet dropped by policy

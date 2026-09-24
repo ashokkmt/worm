@@ -32,6 +32,8 @@ var KnownFormats = map[string]bool{
 	"json":   true,
 	"csv":    true,
 	"cef":    true,
+	"xml":    true,
+	"leef":   true,
 	"text":   true,
 	"*":      true,
 }
@@ -55,11 +57,32 @@ type PackMetadata struct {
 	Author      string `yaml:"author,omitempty"`
 }
 
+// DecodeOptions defines optional format-specific decoding parameters.
+type DecodeOptions struct {
+	XML *XMLDecodeOptions `yaml:"xml,omitempty"`
+	CSV *CSVDecodeOptions `yaml:"csv,omitempty"`
+}
+
+// XMLDecodeOptions configures XML record extraction and namespace resolution.
+type XMLDecodeOptions struct {
+	RecordPath       string            `yaml:"recordPath,omitempty"`
+	AttributePrefix  string            `yaml:"attributePrefix,omitempty"`
+	TextKey          string            `yaml:"textKey,omitempty"`
+	NamespaceAliases map[string]string `yaml:"namespaceAliases,omitempty"`
+}
+
+// CSVDecodeOptions configures CSV parsing parameters.
+type CSVDecodeOptions struct {
+	Delimiter string `yaml:"delimiter,omitempty"`
+	HasHeader bool   `yaml:"hasHeader,omitempty"`
+}
+
 // PackSpec defines source categorization, format, match rules, and field extractions.
 type PackSpec struct {
 	SourceCategory   string               `yaml:"sourceCategory"`
 	Format           string               `yaml:"format"`
 	Match            MatchRule            `yaml:"match"`
+	Decode           *DecodeOptions       `yaml:"decode,omitempty"`
 	Fields           map[string]FieldRule `yaml:"fields"`
 	Map              map[string]string    `yaml:"map"`
 	PreserveUnmapped bool                 `yaml:"preserveUnmapped"`
@@ -245,6 +268,10 @@ func formatMatches(packFormat, recFormat string) bool {
 		return strings.HasPrefix(recFormat, "csv")
 	case "cef":
 		return strings.HasPrefix(recFormat, "cef")
+	case "xml":
+		return strings.HasPrefix(recFormat, "xml")
+	case "leef":
+		return strings.HasPrefix(recFormat, "leef")
 	}
 	return false
 }

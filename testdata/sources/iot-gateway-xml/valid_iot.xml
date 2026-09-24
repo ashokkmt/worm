@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<iot_gateway_event device_type="sensor_hub">
+    <timestamp>2026-09-24T12:05:00Z</timestamp>
+    <gateway_id>gw-industrial-04</gateway_id>
+    <sensor_ip>192.168.10.88</sensor_ip>
+    <status>normal</status>
+    <alert>temperature_ok</alert>
+</iot_gateway_event>

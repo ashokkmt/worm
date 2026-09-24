@@ -2,6 +2,7 @@ import { SystemStats, HealthStatus } from '../types/telemetry';
 import { NormalizedEvent, EventTrace, QuarantineEntry, SourceSummary } from '../types/event';
 import { ParserPackSummary, PackValidationResponse } from '../types/pack';
 import { RuntimeConfig } from '../types/config';
+import { ConnectionSummary, ConnectionValidationResponse, ConnectionTestResponse, ConnectionApplyResponse } from '../types/connection';
 
 const BASE_URL = '/api/v1';
 
@@ -110,4 +111,27 @@ export const apiService = {
     }),
 
   getConfig: () => fetchJSON<RuntimeConfig>('/config'),
+
+  listConnections: () => fetchJSON<{ connections: ConnectionSummary[] }>('/connections'),
+  getConnection: (name: string) => fetchJSON<any>(`/connections/${encodeURIComponent(name)}`),
+  validateConnection: (yamlContent: string) =>
+    fetchJSON<ConnectionValidationResponse>('/connections/validate', {
+      method: 'POST',
+      body: JSON.stringify({ yaml_content: yamlContent }),
+    }),
+  testConnection: (yamlContent: string) =>
+    fetchJSON<ConnectionTestResponse>('/connections/test', {
+      method: 'POST',
+      body: JSON.stringify({ yaml_content: yamlContent }),
+    }),
+  applyConnection: (yamlContent: string) =>
+    fetchJSON<ConnectionApplyResponse>('/connections/apply', {
+      method: 'POST',
+      body: JSON.stringify({ yaml_content: yamlContent }),
+    }),
+  rollbackConnection: () =>
+    fetchJSON<{ status: string; message: string }>('/connections/rollback', {
+      method: 'POST',
+    }),
 };
+

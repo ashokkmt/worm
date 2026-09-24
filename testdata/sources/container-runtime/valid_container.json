@@ -1,0 +1,10 @@
+{
+  "source": "container-runtime",
+  "timestamp": "2026-09-24T12:01:00Z",
+  "container_id": "c-987123",
+  "image": "registry.local/api:v1.2",
+  "level": "info",
+  "message": "Container started successfully",
+  "action": "start",
+  "host_ip": "10.244.0.15"
+}

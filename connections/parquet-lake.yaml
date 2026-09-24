@@ -1,0 +1,16 @@
+apiVersion: worm.io/v1
+kind: Connection
+metadata:
+  name: local-parquet-lake
+  version: 1.0.0
+  description: Local columnar Parquet data lake sink with manifest
+spec:
+  type: parquet_output
+  enabled: true
+  path: /tmp/worm/lake
+  partitionBy:
+    - event_date
+    - category_name
+  maxRowsPerFile: 100000
+  compression: zstd
+  manifest: true

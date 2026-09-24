@@ -1,0 +1,34 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: iam-auth-leef
+  version: 1.0.0
+  description: Identity and Access Management authentication events in LEEF format
+  author: WORM Team
+spec:
+  sourceCategory: iam
+  format: leef
+  match:
+    fieldEquals:
+      product: "AuthServer"
+  fields:
+    usrName:
+      from: usrName
+      type: string
+    src:
+      from: src
+      type: ip
+    action:
+      from: action
+      type: string
+    authMethod:
+      from: authMethod
+      type: string
+  map:
+    usrName: event.actor.user.uid
+    src: event.src_endpoint.ip
+    action: event.activity_name
+    authMethod: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/iam-auth-leef/valid_auth.leef

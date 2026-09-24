@@ -1,0 +1,23 @@
+{
+  "worm": {
+    "source_category": "network_device",
+    "parser_pack": "network-perimeter-xml",
+    "parser_version": "1.0.0",
+    "core_version": "0.1.0",
+    "schema_version": "1.3.0",
+    "status": "normalized"
+  },
+  "event": {
+    "category_name": "Network Activity",
+    "class_name": "Network Activity",
+    "message": "SQL Injection Attempt in URI",
+    "action": "drop",
+    "src_endpoint": {
+      "ip": "203.0.113.89"
+    },
+    "dst_endpoint": {
+      "ip": "198.51.100.20",
+      "port": 443
+    }
+  }
+}

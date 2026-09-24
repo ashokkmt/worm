@@ -1,0 +1,1 @@
+[APPLIANCE-CUSTOM] ip=172.16.50.4 user=system status=ok event=SYSTEM_HEARTBEAT msg=ApplianceMemoryNormal

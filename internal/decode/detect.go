@@ -34,8 +34,10 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(NewSyslogDecoder())
 	r.Register(NewJSONDecoder())
+	r.Register(NewXMLDecoder())
 	r.Register(NewCSVDecoder())
 	r.Register(NewCEFDecoder())
+	r.Register(NewLEEFDecoder())
 	r.Register(NewTextDecoder())
 	return r
 }
@@ -80,6 +82,9 @@ func (r *Registry) DetectRanked(raw []byte) []CandidateScore {
 		// Syslog envelope has outer precedence
 		if candidates[i].Name == "syslog" {
 			return true
+		}
+		if candidates[j].Name == "syslog" {
+			return false
 		}
 		return candidates[i].Name < candidates[j].Name
 	})

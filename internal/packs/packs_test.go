@@ -52,6 +52,13 @@ func TestLoadPack_AllPacks(t *testing.T) {
 		"endpoint-ids-alert",
 		"app-payment-gateway",
 		"database-audit",
+		"cloud-audit",
+		"container-runtime",
+		"iam-auth-leef",
+		"iot-gateway-xml",
+		"appliance-proprietary-text",
+		"network-perimeter-xml",
+		"network-perimeter-leef",
 	}
 
 	if len(snap.ListPacks()) != len(expectedPacks) {
@@ -380,9 +387,9 @@ func TestExtractAndConvert(t *testing.T) {
 		Kind:       "LogSource",
 		Metadata:   PackMetadata{Name: "extractor-test", Version: "1.0.0"},
 		Spec: PackSpec{
-			SourceCategory: "network_device",
-			Format:         "syslog",
-			Match:          MatchRule{Contains: "PAN-OS"},
+			SourceCategory:   "network_device",
+			Format:           "syslog",
+			Match:            MatchRule{Contains: "PAN-OS"},
 			PreserveUnmapped: true,
 			Fields: map[string]FieldRule{
 				"src": {

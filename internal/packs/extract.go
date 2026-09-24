@@ -17,7 +17,7 @@ var commonTimeLayouts = []string{
 	"2006-01-02T15:04:05Z",
 	"2006-01-02 15:04:05",
 	"02/Jan/2006:15:04:05 -0700", // Combined Log Format (CLF)
-	"Jan 02 15:04:05",           // RFC 3164 BSD Syslog
+	"Jan 02 15:04:05",            // RFC 3164 BSD Syslog
 	"Jan  2 15:04:05",
 }
 

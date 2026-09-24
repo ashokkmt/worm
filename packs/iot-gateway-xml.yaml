@@ -1,0 +1,39 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: iot-gateway-xml
+  version: 1.0.0
+  description: Industrial IoT gateway telemetry and status reports in XML format
+  author: WORM Team
+spec:
+  sourceCategory: iot
+  format: xml
+  match:
+    fieldEquals:
+      xml_root_local: "iot_gateway_event"
+  fields:
+    timestamp:
+      from: timestamp
+      type: timestamp
+      layout: "2006-01-02T15:04:05Z"
+    sensor_ip:
+      from: sensor_ip
+      type: ip
+    gateway_id:
+      from: gateway_id
+      type: string
+    status:
+      from: status
+      type: string
+    alert:
+      from: alert
+      type: string
+  map:
+    timestamp: event.time
+    sensor_ip: event.src_endpoint.ip
+    gateway_id: event.actor.user.uid
+    status: event.status
+    alert: event.message
+  preserveUnmapped: true
+  fixtures:
+    - testdata/sources/iot-gateway-xml/valid_iot.xml

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<perimeter_alert vendor="PerimeterGuard">
+    <timestamp>2026-09-24T12:15:00Z</timestamp>
+    <src_ip>203.0.113.89</src_ip>
+    <dst_ip>198.51.100.20</dst_ip>
+    <dst_port>443</dst_port>
+    <action>drop</action>
+    <signature>SQL Injection Attempt in URI</signature>
+</perimeter_alert>

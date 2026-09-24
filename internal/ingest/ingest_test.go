@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -376,4 +377,156 @@ func TestFileCommitFailureMovesToFailed(t *testing.T) {
 		t.Errorf("expected file to move to failed/ directory after commit error, got %d files", len(entries))
 	}
 	_ = watcher.Stop()
+}
+
+func TestSyslogTLSListener(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// In test mode without TLS certs, it listens plain TCP
+	listener := ingest.NewSyslogTLSListener("127.0.0.1:0", nil)
+	out := make(chan model.IngestedRecord, 10)
+
+	go func() {
+		_ = listener.Start(ctx, out)
+	}()
+
+	var addr net.Addr
+	for i := 0; i < 20; i++ {
+		addr = listener.Addr()
+		if addr != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if addr == nil {
+		t.Fatalf("TLS listener failed to bind")
+	}
+
+	conn, err := net.Dial("tcp", addr.String())
+	if err != nil {
+		t.Fatalf("failed to dial listener: %v", err)
+	}
+	defer conn.Close()
+
+	msg := "<14>1 2026-09-24T12:00:00Z tls-host tls-app - - msg\n"
+	if _, err := conn.Write([]byte(msg)); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	select {
+	case rec := <-out:
+		if rec.Transport != "syslog_tls" {
+			t.Errorf("expected transport syslog_tls, got %s", rec.Transport)
+		}
+		if string(rec.RawBytes) != "<14>1 2026-09-24T12:00:00Z tls-host tls-app - - msg" {
+			t.Errorf("unexpected payload: %s", string(rec.RawBytes))
+		}
+		if rec.Ack != nil {
+			rec.Ack <- nil
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for TLS syslog message")
+	}
+	_ = listener.Stop()
+}
+
+func TestCloudPoller(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"next_watermark": "wm-20260924-002",
+			"records": [
+				{"event": "cloud_login", "user": "alice"}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	tempDir := t.TempDir()
+	wmPath := filepath.Join(tempDir, "watermark.txt")
+
+	cfg := ingest.PollerConfig{
+		EndpointURL:   server.URL,
+		Interval:      50 * time.Millisecond,
+		WatermarkPath: wmPath,
+	}
+	poller := ingest.NewCloudPoller(cfg)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan model.IngestedRecord, 10)
+	go func() {
+		_ = poller.Start(ctx, out)
+	}()
+
+	select {
+	case rec := <-out:
+		if rec.Transport != "cloud_pull" {
+			t.Errorf("expected transport cloud_pull, got %s", rec.Transport)
+		}
+		if rec.Ack != nil {
+			rec.Ack <- nil // commit success
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for polled record")
+	}
+
+	// Verify watermark was persisted after commit
+	time.Sleep(100 * time.Millisecond)
+	wm, err := poller.LoadWatermark()
+	if err != nil || wm != "wm-20260924-002" {
+		t.Errorf("expected persisted watermark wm-20260924-002, got %q (err: %v)", wm, err)
+	}
+
+	_ = poller.Stop()
+}
+
+func TestKafkaAdapter(t *testing.T) {
+	initialMsgs := []*ingest.KafkaConsumerRecord{
+		{
+			Topic:     "worm.raw.v1",
+			Partition: 0,
+			Offset:    101,
+			Key:       []byte("k1"),
+			Value:     []byte(`{"source":"kafka_stream","val":42}`),
+			Timestamp: time.Now().UTC(),
+		},
+	}
+	memConsumer := ingest.NewMemoryKafkaConsumer(initialMsgs)
+
+	cfg := ingest.KafkaInputConfig{
+		Topics: []string{"worm.raw.v1"},
+	}
+	adapter := ingest.NewKafkaAdapter(cfg, memConsumer)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := make(chan model.IngestedRecord, 10)
+	go func() {
+		_ = adapter.Start(ctx, out)
+	}()
+
+	select {
+	case rec := <-out:
+		if rec.Transport != "kafka_input" {
+			t.Errorf("expected transport kafka_input, got %s", rec.Transport)
+		}
+		if rec.Ack != nil {
+			rec.Ack <- nil // simulate durable raw commit
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for kafka record")
+	}
+
+	// Verify offset was committed
+	time.Sleep(50 * time.Millisecond)
+	committed := memConsumer.GetCommitted("worm.raw.v1", 0)
+	if committed != 101 {
+		t.Errorf("expected committed offset 101, got %d", committed)
+	}
+
+	_ = adapter.Stop()
 }

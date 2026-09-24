@@ -115,7 +115,25 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		headers["syslog_msgid"] = parts[5]
 
 		if len(parts) >= 7 {
-			msgBody = parts[6]
+			sdAndMsg := parts[6]
+			if strings.HasPrefix(sdAndMsg, "- ") {
+				headers["syslog_structured_data"] = "-"
+				msgBody = strings.TrimPrefix(sdAndMsg, "- ")
+			} else if sdAndMsg == "-" {
+				headers["syslog_structured_data"] = "-"
+				msgBody = ""
+			} else if strings.HasPrefix(sdAndMsg, "[") {
+				lastClose := strings.LastIndex(sdAndMsg, "]")
+				if lastClose != -1 && lastClose < len(sdAndMsg)-1 {
+					headers["syslog_structured_data"] = sdAndMsg[:lastClose+1]
+					msgBody = strings.TrimSpace(sdAndMsg[lastClose+1:])
+				} else {
+					headers["syslog_structured_data"] = sdAndMsg
+					msgBody = ""
+				}
+			} else {
+				msgBody = sdAndMsg
+			}
 		}
 	} else {
 		// RFC 3164 (BSD): <PRI>Mmm dd hh:mm:ss HOSTNAME TAG[PID]: MSG
@@ -150,6 +168,31 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		}
 	}
 
+	// Layered Syslog payload inspection (Section 4.1)
+	trimmedBody := strings.TrimSpace(msgBody)
+	if strings.HasPrefix(trimmedBody, "CEF:") {
+		cefDec := NewCEFDecoder()
+		if innerRecs, err := cefDec.Decode([]byte(trimmedBody)); err == nil && len(innerRecs) > 0 {
+			return wrapInnerRecords(innerRecs, headers, raw, formatVariant), nil
+		}
+	} else if strings.HasPrefix(trimmedBody, "LEEF:") {
+		leefDec := NewLEEFDecoder()
+		if innerRecs, err := leefDec.Decode([]byte(trimmedBody)); err == nil && len(innerRecs) > 0 {
+			return wrapInnerRecords(innerRecs, headers, raw, formatVariant), nil
+		}
+	} else if (strings.HasPrefix(trimmedBody, "{") && strings.HasSuffix(trimmedBody, "}")) ||
+		(strings.HasPrefix(trimmedBody, "[") && strings.HasSuffix(trimmedBody, "]")) {
+		jsonDec := NewJSONDecoder()
+		if innerRecs, err := jsonDec.Decode([]byte(trimmedBody)); err == nil && len(innerRecs) > 0 {
+			return wrapInnerRecords(innerRecs, headers, raw, formatVariant), nil
+		}
+	} else if strings.HasPrefix(trimmedBody, "<") && strings.HasSuffix(trimmedBody, ">") && !strings.HasPrefix(trimmedBody, "<!") {
+		xmlDec := NewXMLDecoder()
+		if innerRecs, err := xmlDec.Decode([]byte(trimmedBody)); err == nil && len(innerRecs) > 0 {
+			return wrapInnerRecords(innerRecs, headers, raw, formatVariant), nil
+		}
+	}
+
 	fields["message"] = msgBody
 
 	// Extract key=value pairs from the message body if present (common in firewalls e.g. PAN-OS)
@@ -172,6 +215,22 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	}
 
 	return []*model.DecodedRecord{record}, nil
+}
+
+func wrapInnerRecords(innerRecs []*model.DecodedRecord, syslogHeaders map[string]any, raw []byte, outerVariant string) []*model.DecodedRecord {
+	for _, rec := range innerRecs {
+		rec.RawPayload = raw
+		rec.Headers["syslog_envelope"] = outerVariant
+		for k, v := range syslogHeaders {
+			if _, exists := rec.Headers[k]; !exists {
+				rec.Headers[k] = v
+			}
+			if _, exists := rec.Fields[k]; !exists {
+				rec.Fields[k] = v
+			}
+		}
+	}
+	return innerRecs
 }
 
 // parseKeyValueTokens extracts tokens in format `key=value` or `key="quoted value"`.

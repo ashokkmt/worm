@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"worm/internal/connections"
 	"worm/internal/decode"
 	"worm/internal/model"
 	"worm/internal/packs"
@@ -54,6 +55,8 @@ type Server struct {
 	pipe          *pipeline.Pipeline
 	packManager   *packs.SnapshotManager
 	packsDir      string
+	connManager   *connections.Manager
+	connsDir      string
 	cfgInfo       ConfigInfo
 	distFS        fs.FS
 	startTime     time.Time
@@ -108,6 +111,12 @@ func (s *Server) SetIngestTracker(t IngestTracker) {
 	s.ingestTracker = t
 }
 
+// SetConnManager attaches a connection manager and directory.
+func (s *Server) SetConnManager(mgr *connections.Manager, dir string) {
+	s.connManager = mgr
+	s.connsDir = dir
+}
+
 func (s *Server) requireAdminAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token := s.cfgInfo.AdminToken
@@ -153,6 +162,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/packs/validate", s.handleValidatePack)
 	mux.HandleFunc("POST /api/v1/packs/activate", s.requireAdminAuth(s.handleActivatePack))
 	mux.HandleFunc("POST /api/v1/packs/rollback", s.requireAdminAuth(s.handleRollbackPack))
+	mux.HandleFunc("GET /api/v1/connections", s.handleListConnections)
+	mux.HandleFunc("GET /api/v1/connections/{name}", s.handleGetConnection)
+	mux.HandleFunc("POST /api/v1/connections/validate", s.handleValidateConnection)
+	mux.HandleFunc("POST /api/v1/connections/test", s.handleTestConnection)
+	mux.HandleFunc("POST /api/v1/connections/apply", s.requireAdminAuth(s.handleApplyConnection))
+	mux.HandleFunc("POST /api/v1/connections/rollback", s.requireAdminAuth(s.handleRollbackConnection))
 	mux.HandleFunc("GET /api/v1/config", s.handleConfig)
 
 	// Static UI routing with SPA client-side fallback
@@ -823,6 +838,137 @@ func (s *Server) handleRollbackPack(w http.ResponseWriter, r *http.Request) {
 	s.jsonResponse(w, http.StatusOK, map[string]any{
 		"status":  "rolled_back",
 		"version": s.packManager.Active().Version(),
+	})
+}
+
+func (s *Server) handleListConnections(w http.ResponseWriter, r *http.Request) {
+	if s.connManager == nil {
+		s.jsonResponse(w, http.StatusOK, map[string]any{"connections": []any{}})
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"connections": s.connManager.List(),
+	})
+}
+
+func (s *Server) handleGetConnection(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if s.connManager == nil {
+		s.jsonError(w, http.StatusNotFound, "connections manager not configured")
+		return
+	}
+	conn, err := s.connManager.Get(name)
+	if err != nil {
+		s.jsonError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, conn)
+}
+
+func (s *Server) handleValidateConnection(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		YamlContent string `json:"yaml_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid json body: "+err.Error())
+		return
+	}
+	conn, err := connections.LoadConnection(strings.NewReader(req.YamlContent))
+	if err != nil {
+		s.jsonResponse(w, http.StatusOK, map[string]any{
+			"valid": false,
+			"error": err.Error(),
+		})
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"valid":      true,
+		"name":       conn.Metadata.Name,
+		"version":    conn.Metadata.Version,
+		"type":       conn.Spec.Type,
+		"connection": conn,
+	})
+}
+
+func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		YamlContent string `json:"yaml_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid json body: "+err.Error())
+		return
+	}
+	conn, err := connections.LoadConnection(strings.NewReader(req.YamlContent))
+	if err != nil {
+		s.jsonResponse(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	if err := conn.TestConnectivity(r.Context()); err != nil {
+		s.jsonResponse(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"success": true,
+		"message": "connectivity test succeeded",
+	})
+}
+
+func (s *Server) handleApplyConnection(w http.ResponseWriter, r *http.Request) {
+	if s.connManager == nil {
+		s.jsonError(w, http.StatusBadRequest, "connections manager not configured")
+		return
+	}
+	var req struct {
+		Filename    string `json:"filename"`
+		YamlContent string `json:"yaml_content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.jsonError(w, http.StatusBadRequest, "invalid json body: "+err.Error())
+		return
+	}
+	if req.YamlContent == "" {
+		s.jsonError(w, http.StatusBadRequest, "yaml_content is required")
+		return
+	}
+	fn := req.Filename
+	if fn == "" {
+		parsed, pErr := connections.LoadConnection(strings.NewReader(req.YamlContent))
+		if pErr != nil {
+			s.jsonError(w, http.StatusBadRequest, "invalid connection yaml: "+pErr.Error())
+			return
+		}
+		fn = parsed.Metadata.Name + ".yaml"
+	}
+	applied, err := s.connManager.ApplyFile(fn, []byte(req.YamlContent))
+	if err != nil {
+		s.jsonError(w, http.StatusBadRequest, "failed to apply connection: "+err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"status":     "applied",
+		"name":       applied.Metadata.Name,
+		"version":    applied.Metadata.Version,
+		"connection": applied,
+	})
+}
+
+func (s *Server) handleRollbackConnection(w http.ResponseWriter, r *http.Request) {
+	if s.connManager == nil {
+		s.jsonError(w, http.StatusBadRequest, "connections manager not configured")
+		return
+	}
+	if err := s.connManager.Rollback(); err != nil {
+		s.jsonError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.jsonResponse(w, http.StatusOK, map[string]any{
+		"status": "rolled_back",
 	})
 }
 

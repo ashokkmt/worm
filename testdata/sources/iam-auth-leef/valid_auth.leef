@@ -1,0 +1,1 @@
+LEEF:2.0|Keycloak|AuthServer|22.0|AUTH_SUCCESS|^|usrName=bob^src=192.168.1.10^action=login^authMethod=password

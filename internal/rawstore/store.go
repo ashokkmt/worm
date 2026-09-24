@@ -873,10 +873,10 @@ func (s *RawStore) ListSources(ctx context.Context) ([]map[string]any, error) {
 			return nil, err
 		}
 		sources = append(sources, map[string]any{
-			"category":   category,
-			"source_id":  sourceID,
-			"events":     count,
-			"last_seen":  lastSeen,
+			"category":  category,
+			"source_id": sourceID,
+			"events":    count,
+			"last_seen": lastSeen,
 		})
 	}
 	if err := rows.Err(); err != nil {
