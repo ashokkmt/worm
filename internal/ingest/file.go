@@ -139,6 +139,7 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 			RawBytes:   data,
 			ReceivedAt: time.Now().UTC(),
 			Ack:        ackChan,
+			Metadata:   model.ReceiveMetadata{FilePath: filePath, FileOffset: 0},
 		}
 
 		select {
@@ -165,19 +166,29 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	buf := make([]byte, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
-	for scanner.Scan() {
+	reader := bufio.NewReaderSize(file, 1024*1024+1)
+	var offset int64
+	for {
+		rawLine, readErr := reader.ReadSlice('\n')
+		if readErr == bufio.ErrBufferFull {
+			return fmt.Errorf("line exceeds 1 MiB limit in %s at offset %d", filePath, offset)
+		}
+		lineOffset := offset
+		offset += int64(len(rawLine))
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
 
-		line := bytes.TrimRight(scanner.Bytes(), "\r\n")
+		line := bytes.TrimRight(rawLine, "\r\n")
 		if len(line) == 0 {
+			if readErr == io.EOF {
+				return nil
+			}
+			if readErr != nil {
+				return fmt.Errorf("read %s at offset %d: %w", filePath, lineOffset, readErr)
+			}
 			continue
 		}
 
@@ -192,6 +203,7 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 			RawBytes:   payload,
 			ReceivedAt: time.Now().UTC(),
 			Ack:        ackChan,
+			Metadata:   model.ReceiveMetadata{FilePath: filePath, FileOffset: lineOffset},
 		}
 
 		select {
@@ -208,11 +220,11 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			return fmt.Errorf("read %s at offset %d: %w", filePath, lineOffset, readErr)
+		}
 	}
-
-	if err := scanner.Err(); err != nil && err != io.EOF {
-		return fmt.Errorf("scanner error reading %s: %w", filePath, err)
-	}
-
-	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -14,13 +15,18 @@ import (
 	"worm/internal/decode"
 	"worm/internal/model"
 	"worm/internal/normalize"
+	"worm/internal/outbox"
 	"worm/internal/packs"
 	"worm/internal/rawstore"
 )
 
 // OutputSink represents a destination for normalized WORM events.
 type OutputSink interface {
-	Emit(ctx context.Context, event *model.NormalizedEvent) error
+	Emit(context.Context, *model.NormalizedEvent) error
+}
+type durableOutput interface {
+	DestinationNames() []string
+	EmitTo(context.Context, string, *model.NormalizedEvent) error
 }
 
 // MemorySink is a simple thread-safe in-memory sink for testing and local inspection.
@@ -63,18 +69,22 @@ type Config struct {
 
 // Pipeline orchestrates raw commit, parsing, normalization, quarantine and loss accounting.
 type Pipeline struct {
-	cfg         Config
-	store       *rawstore.RawStore
-	sink        OutputSink
-	registry    *decode.Registry
-	packManager *packs.SnapshotManager
-	normalizer  *normalize.Normalizer
-	validator   *normalize.Validator
-	inbound     chan model.IngestedRecord
-	wg          sync.WaitGroup
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closed      atomic.Bool
+	cfg          Config
+	store        *rawstore.RawStore
+	sink         OutputSink
+	registry     *decode.Registry
+	packManager  *packs.SnapshotManager
+	normalizer   *normalize.Normalizer
+	validator    *normalize.Validator
+	inbound      chan model.IngestedRecord
+	wg           sync.WaitGroup
+	ctx          context.Context
+	cancel       context.CancelFunc
+	closed       atomic.Bool
+	outbox       *outbox.Outbox
+	durableSink  durableOutput
+	deliveryWG   sync.WaitGroup
+	deliveryWake chan struct{}
 
 	// Loss accounting counters
 	accepted    atomic.Int64
@@ -98,26 +108,37 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pipeline{
-		cfg:         cfg,
-		store:       store,
-		sink:        sink,
-		registry:    decode.DefaultRegistry(),
-		packManager: cfg.PackManager,
-		normalizer:  normalize.NewNormalizer(),
-		validator:   normalize.NewValidator(),
-		inbound:     make(chan model.IngestedRecord, cfg.BufferSize),
-		ctx:         ctx,
-		cancel:      cancel,
+		cfg:          cfg,
+		store:        store,
+		sink:         sink,
+		registry:     decode.DefaultRegistry(),
+		packManager:  cfg.PackManager,
+		normalizer:   normalize.NewNormalizer(),
+		validator:    normalize.NewValidator(),
+		inbound:      make(chan model.IngestedRecord, cfg.BufferSize),
+		deliveryWake: make(chan struct{}, 1),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
 
+	if d, ok := sink.(durableOutput); ok {
+		p.durableSink = d
+	}
 	if store != nil {
+		p.outbox, _ = outbox.NewOutbox(store.DB())
 		normCount, _ := store.CountNormalized(ctx)
 		quarCount, _ := store.CountQuarantine(ctx)
+		pendingCount, _ := store.CountRawStatus(ctx, model.StatusAccepted)
 		p.normalized.Store(normCount)
-		p.delivered.Store(normCount)
 		p.quarantined.Store(quarCount)
-		// Rebuild accepted logical records = normalized + quarantined (pending = 0)
-		p.accepted.Store(normCount + quarCount)
+		p.pending.Store(pendingCount)
+		p.accepted.Store(normCount + quarCount + pendingCount)
+		if p.outbox != nil {
+			delivered, _ := p.outbox.CountByStatus(ctx, "delivered")
+			p.delivered.Store(delivered)
+		} else {
+			p.delivered.Store(normCount)
+		}
 	}
 
 	return p
@@ -130,9 +151,20 @@ func (p *Pipeline) SetPackManager(pm *packs.SnapshotManager) {
 
 // Start launches the background worker goroutines.
 func (p *Pipeline) Start() {
+	if p.outbox != nil && p.durableSink != nil {
+		p.deliveryWG.Add(1)
+		go p.deliveryLoop()
+	}
 	for i := 0; i < p.cfg.Workers; i++ {
 		p.wg.Add(1)
 		go p.workerLoop(i)
+	}
+	if p.store != nil {
+		if pending, err := p.store.ListRawByStatus(p.ctx, model.StatusAccepted); err == nil {
+			for _, raw := range pending {
+				p.inbound <- model.IngestedRecord{ExistingRawID: raw.RawID}
+			}
+		}
 	}
 }
 
@@ -217,6 +249,7 @@ func (p *Pipeline) Stop() {
 	close(p.inbound)
 	p.wg.Wait()
 	p.cancel()
+	p.deliveryWG.Wait()
 }
 
 func (p *Pipeline) workerLoop(workerID int) {
@@ -250,10 +283,18 @@ func safePreview(b []byte, maxLen int) string {
 func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) {
 	var history []model.ProcessingStep
 
-	// Stage 1: Commit raw bytes to raw store
-	rawEvt, err := p.store.Store(ctx, rec)
-	if rec.Ack != nil {
-		rec.Ack <- err
+	// Stage 1: Commit new bytes, or resume the already durable raw row after restart.
+	var rawEvt *model.RawEvent
+	var err error
+	commitResult := "ok"
+	if rec.ExistingRawID != "" {
+		rawEvt, err = p.store.Retrieve(ctx, rec.ExistingRawID)
+		commitResult = "recovered"
+	} else {
+		rawEvt, err = p.store.Store(ctx, rec)
+		if rec.Ack != nil {
+			rec.Ack <- err
+		}
 	}
 	if err != nil {
 		// BA-002: Raw commit failed: record was never durably committed.
@@ -266,7 +307,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 	history = append(history, model.ProcessingStep{
 		Stage:     "raw_commit",
 		Timestamp: time.Now().UTC(),
-		Result:    "ok",
+		Result:    commitResult,
 	})
 
 	preview := safePreview(rawEvt.Payload, 256)
@@ -448,7 +489,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 				ocsfPayload["time"] = rawEvt.ReceivedAt.UnixMilli()
 			}
 			if _, ok := ocsfPayload["category_name"]; !ok {
-				ocsfPayload["category_name"] = "Other"
+				ocsfPayload["category_name"] = "Other Activity"
 			}
 			if _, ok := ocsfPayload["class_name"]; !ok {
 				ocsfPayload["class_name"] = "Base Event"
@@ -477,47 +518,38 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			continue
 		}
 
-		// BA-003: Store normalized record and check error
-		if p.store != nil {
-			if storeErr := p.store.StoreNormalized(ctx, normalized); storeErr != nil {
-				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
-					RawID:          rawEvt.RawID,
-					RecordOrdinal:  decRec.RecordOrdinal,
-					RawSHA256:      rawEvt.RawSHA256,
-					Stage:          "storage",
-					Reason:         "store_error",
-					ErrorDetails:   storeErr.Error(),
-					RawPreview:     childPreview,
-					ReplayEligible: true,
-					QuarantinedAt:  time.Now().UTC(),
-				})
-				p.quarantined.Add(1)
-				p.pending.Add(-1)
-				continue
-			}
+		// Persist normalized state and durable per-destination delivery intent atomically.
+		destinations := []string(nil)
+		if p.durableSink != nil {
+			destinations = p.durableSink.DestinationNames()
 		}
-
-		// Emit to sink and check error
-		if emitErr := p.sink.Emit(ctx, normalized); emitErr != nil {
-			_ = p.store.Quarantine(ctx, model.QuarantineEntry{
-				RawID:          rawEvt.RawID,
-				RecordOrdinal:  decRec.RecordOrdinal,
-				RawSHA256:      rawEvt.RawSHA256,
-				Stage:          "output",
-				Reason:         "sink_error",
-				ErrorDetails:   emitErr.Error(),
-				RawPreview:     childPreview,
-				ReplayEligible: true,
-				QuarantinedAt:  time.Now().UTC(),
-			})
+		var storeErr error
+		if p.store != nil {
+			storeErr = p.store.StoreNormalizedWithOutbox(ctx, normalized, destinations)
+		}
+		if storeErr != nil {
+			_ = p.store.Quarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "storage", Reason: "store_error", ErrorDetails: storeErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()})
 			p.quarantined.Add(1)
 			p.pending.Add(-1)
 			continue
 		}
+		if p.durableSink == nil {
+			if emitErr := p.sink.Emit(ctx, normalized); emitErr != nil {
+				_ = p.store.Quarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "output", Reason: "sink_error", ErrorDetails: emitErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()})
+				p.quarantined.Add(1)
+				p.pending.Add(-1)
+				continue
+			}
+			p.delivered.Add(1)
+		} else {
+			select {
+			case p.deliveryWake <- struct{}{}:
+			default:
+			}
+		}
 
 		childNormalizedCount++
 		p.normalized.Add(1)
-		p.delivered.Add(1)
 		p.pending.Add(-1)
 	}
 
@@ -525,9 +557,47 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 	finalStatus := model.StatusNormalized
 	if childNormalizedCount == 0 {
 		finalStatus = model.StatusQuarantined
+	} else if childNormalizedCount < numChildren {
+		finalStatus = model.StatusPartial
 	}
 	if p.store != nil {
 		_ = p.store.UpdateStatus(ctx, rawEvt.RawID, finalStatus)
+	}
+}
+
+func (p *Pipeline) deliveryLoop() {
+	defer p.deliveryWG.Done()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		p.deliverPending()
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+		case <-p.deliveryWake:
+		}
+	}
+}
+func (p *Pipeline) deliverPending() {
+	entries, err := p.outbox.FetchPending(p.ctx, 100)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		var event model.NormalizedEvent
+		if json.Unmarshal(entry.Payload, &event) != nil {
+			_ = p.outbox.MarkFailed(p.ctx, entry.ID, "invalid event payload", time.Hour, 1)
+			continue
+		}
+		if err := p.durableSink.EmitTo(p.ctx, entry.Destination, &event); err != nil {
+			backoff := time.Second << min(entry.Attempts, 6)
+			_ = p.outbox.MarkFailed(p.ctx, entry.ID, err.Error(), backoff, 0)
+			continue
+		}
+		if p.outbox.MarkDelivered(p.ctx, entry.ID) == nil {
+			p.delivered.Add(1)
+		}
 	}
 }
 
@@ -600,14 +670,13 @@ func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEve
 		return nil, fmt.Errorf("replay validation failed: %w", err)
 	}
 
-	// BA-005: Emit to sink first. If delivery fails, do NOT close quarantine or increment delivered!
-	if err := p.sink.Emit(ctx, norm); err != nil {
-		return nil, fmt.Errorf("replay delivery to sink failed: %w", err)
+	destinations := []string(nil)
+	if p.durableSink != nil {
+		destinations = p.durableSink.DestinationNames()
 	}
-
-	// Persist normalized projection and remove from quarantine
+	// Persist projection and delivery intent before resolving quarantine.
 	if p.store != nil {
-		if err := p.store.StoreNormalized(ctx, norm); err != nil {
+		if err := p.store.StoreNormalizedWithOutbox(ctx, norm, destinations); err != nil {
 			return nil, fmt.Errorf("failed to store normalized replayed event: %w", err)
 		}
 		if err := p.store.DeleteQuarantine(ctx, qID); err != nil {
@@ -621,18 +690,43 @@ func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEve
 		p.quarantined.Add(-1)
 	}
 	p.normalized.Add(1)
-	p.delivered.Add(1)
-
+	if p.durableSink == nil {
+		if err := p.sink.Emit(ctx, norm); err != nil {
+			return nil, err
+		}
+		p.delivered.Add(1)
+	} else {
+		select {
+		case p.deliveryWake <- struct{}{}:
+		default:
+		}
+	}
 	return norm, nil
 }
 
 // Stats returns a snapshot of loss accounting counters and verifies the invariant.
-func (p *Pipeline) Stats() model.LossAccountingStats {
-	return model.LossAccountingStats{
-		Accepted:    p.accepted.Load(),
-		Normalized:  p.normalized.Load(),
-		Quarantined: p.quarantined.Load(),
-		Pending:     p.pending.Load(),
-		Delivered:   p.delivered.Load(),
+func (p *Pipeline) BufferUsage() (depth, capacity int) { return len(p.inbound), cap(p.inbound) }
+func (p *Pipeline) UnmappedCount(ctx context.Context) int64 {
+	if p.store == nil {
+		return 0
 	}
+	n, _ := p.store.CountUnmapped(ctx)
+	return n
+}
+
+func (p *Pipeline) Stats() model.LossAccountingStats {
+	stats := model.LossAccountingStats{Accepted: p.accepted.Load(), Normalized: p.normalized.Load(), Quarantined: p.quarantined.Load(), Pending: p.pending.Load(), Delivered: p.delivered.Load()}
+	if p.store != nil {
+		ctx := context.Background()
+		stats.Normalized, _ = p.store.CountNormalized(ctx)
+		stats.Quarantined, _ = p.store.CountQuarantine(ctx)
+		stats.Pending = p.pending.Load()
+		stats.Accepted = stats.Normalized + stats.Quarantined + stats.Pending
+	}
+	if p.outbox != nil {
+		stats.Delivered, _ = p.outbox.CountByStatus(context.Background(), "delivered")
+		stats.DeliveryPending, _ = p.outbox.CountByStatus(context.Background(), "pending")
+		stats.DeliveryFailed, _ = p.outbox.CountByStatus(context.Background(), "failed")
+	}
+	return stats
 }

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "worm://schemas/ocsf-1.3.0-profile",
+  "title": "WORM governed OCSF 1.3.0 profile",
+  "type": "object",
+  "required": ["time", "category_name", "class_name"],
+  "properties": {
+    "time": {"type": "number", "exclusiveMinimum": 0},
+    "category_name": {"type": "string"},
+    "class_name": {"type": "string"},
+    "severity_id": {"type": "number", "minimum": 0, "maximum": 10},
+    "message": {"type": "string"},
+    "unmapped": {"type": "object"}
+  },
+  "additionalProperties": true
+}

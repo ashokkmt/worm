@@ -146,6 +146,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
         quarantined={stats?.quarantined || 0}
         pending={stats?.pending || 0}
         delivered={stats?.delivered || 0}
+        deliveryPending={stats?.delivery_pending || 0}
+        deliveryFailed={stats?.delivery_failed || 0}
         audit={stats?.loss_audit}
       />
 

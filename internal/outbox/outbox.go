@@ -49,6 +49,7 @@ func NewOutbox(db *sql.DB) (*Outbox, error) {
 	);
 	CREATE INDEX IF NOT EXISTS idx_outbox_pending ON outbox (status, next_retry_at);
 	CREATE INDEX IF NOT EXISTS idx_outbox_event ON outbox (event_id);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_destination ON outbox (event_id, destination);
 	`
 	if _, err := db.Exec(query); err != nil {
 		return nil, fmt.Errorf("failed to initialize outbox schema: %w", err)
@@ -150,15 +151,8 @@ func (o *Outbox) MarkFailed(ctx context.Context, id int64, errDetails string, ba
 	now := time.Now().UTC()
 	nextRetry := now.Add(backoff)
 
-	query := `
-	UPDATE outbox
-	SET attempts = attempts + 1,
-	    next_retry_at = ?,
-	    error_details = ?,
-	    status = CASE WHEN attempts + 1 >= ? THEN 'failed' ELSE 'pending' END
-	WHERE id = ?
-	`
-	_, err := o.db.ExecContext(ctx, query, nextRetry, errDetails, maxAttempts, id)
+	query := `UPDATE outbox SET attempts=attempts+1,next_retry_at=?,error_details=?,status=CASE WHEN ?>0 AND attempts+1>=? THEN 'failed' ELSE 'pending' END WHERE id=?`
+	_, err := o.db.ExecContext(ctx, query, nextRetry, errDetails, maxAttempts, maxAttempts, id)
 	return err
 }
 

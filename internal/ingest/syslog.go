@@ -104,6 +104,7 @@ func (l *SyslogUDPListener) Start(ctx context.Context, out chan<- model.Ingested
 			SourcePort: remoteAddr.Port,
 			RawBytes:   payload,
 			ReceivedAt: time.Now().UTC(),
+			Metadata:   model.ReceiveMetadata{Listener: conn.LocalAddr().String()},
 		}
 
 		select {
@@ -256,6 +257,7 @@ func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, ou
 					SourcePort: remotePort,
 					RawBytes:   payload,
 					ReceivedAt: time.Now().UTC(),
+					Metadata:   model.ReceiveMetadata{Listener: conn.LocalAddr().String()},
 				}
 				select {
 				case out <- rec:
@@ -285,6 +287,7 @@ func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, ou
 			SourcePort: remotePort,
 			RawBytes:   payload,
 			ReceivedAt: time.Now().UTC(),
+			Metadata:   model.ReceiveMetadata{Listener: conn.LocalAddr().String()},
 		}
 
 		select {

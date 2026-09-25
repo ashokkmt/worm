@@ -7,7 +7,7 @@ import {
   Layers,
   Settings,
   ShieldCheck,
-  Lock,
+  // Lock,
   Menu,
   X
 } from 'lucide-react';
@@ -117,12 +117,12 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {/* Air-Gapped Strict */}
-            <div className="hidden sm:block">
+            {/* <div className="hidden sm:block">
               <Badge variant="purple">
                 <Lock className="w-3 h-3 mr-1" />
                 AIR-GAPPED
               </Badge>
-            </div>
+            </div> */}
           </div>
 
         </div>

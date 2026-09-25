@@ -6,6 +6,8 @@
 # Frontend dependencies and build output
 **/node_modules
 **/dist
+!web/dist/
+!web/dist/**
 **/.vite
 **/npm-debug.log*
 
@@ -15,6 +17,8 @@
 *.out
 
 simulator.yaml
+
+vendor/
 
 # Container and compose files not needed by the image build
 docker/

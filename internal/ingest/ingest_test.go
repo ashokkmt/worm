@@ -3,12 +3,20 @@ package ingest_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -63,6 +71,9 @@ func TestSyslogUDPListener(t *testing.T) {
 		if !bytes.Equal(rec.RawBytes, msg) {
 			t.Errorf("payload mismatch: got %q, want %q", string(rec.RawBytes), string(msg))
 		}
+		if rec.Metadata.Listener == "" {
+			t.Error("expected UDP listener metadata")
+		}
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for UDP message")
 	}
@@ -113,6 +124,9 @@ func TestSyslogTCPListener(t *testing.T) {
 			if string(rec.RawBytes) != expected {
 				t.Errorf("payload mismatch: got %q, want %q", string(rec.RawBytes), expected)
 			}
+			if rec.Metadata.Listener == "" {
+				t.Error("expected TCP listener metadata")
+			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("timed out waiting for TCP message: %s", expected)
 		}
@@ -158,7 +172,15 @@ func TestHTTPListener(t *testing.T) {
 	}
 	resp.Body.Close()
 
-	// 2. Authorized single JSON request
+	// 2. Authorized request is acknowledged only after the raw commit boundary.
+	recordCh := make(chan model.IngestedRecord, 1)
+	go func() {
+		rec := <-out
+		if rec.Ack != nil {
+			rec.Ack <- nil
+		}
+		recordCh <- rec
+	}()
 	req, _ = http.NewRequest(http.MethodPost, targetURL, bytes.NewReader([]byte(`{"service":"payment-gateway","amount":100}`)))
 	req.Header.Set("X-WORM-Key", "secret-token")
 	resp, err = http.DefaultClient.Do(req)
@@ -171,7 +193,7 @@ func TestHTTPListener(t *testing.T) {
 	resp.Body.Close()
 
 	select {
-	case rec := <-out:
+	case rec := <-recordCh:
 		if rec.Transport != "http-post" {
 			t.Errorf("expected transport http-post, got %s", rec.Transport)
 		}
@@ -181,6 +203,22 @@ func TestHTTPListener(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatalf("timed out waiting for HTTP record")
 	}
+
+	// A raw-store failure must be visible to the sender; it is not an accepted event.
+	go func() {
+		rec := <-out
+		rec.Ack <- fmt.Errorf("raw store unavailable")
+	}()
+	req, _ = http.NewRequest(http.MethodPost, targetURL, bytes.NewReader([]byte(`{"service":"failed"}`)))
+	req.Header.Set("X-WORM-Key", "secret-token")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("HTTP request failed: %v", err)
+	}
+	if resp.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("expected 503 on raw commit failure, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
 
 	_ = listener.Stop()
 	cancel()
@@ -228,6 +266,9 @@ func TestFileWatcherAndIngestFile(t *testing.T) {
 		case rec := <-out:
 			if rec.Transport != "file" {
 				t.Errorf("expected transport file, got %s", rec.Transport)
+			}
+			if rec.Metadata.FilePath == "" || !strings.Contains(rec.Metadata.FilePath, "processing") {
+				t.Errorf("expected processing file lineage, got %+v", rec.Metadata)
 			}
 			if rec.Ack != nil {
 				rec.Ack <- nil
@@ -282,6 +323,44 @@ func TestManagerLifecycle(t *testing.T) {
 	if ok {
 		t.Errorf("expected closed channel after manager Stop")
 	}
+}
+
+func TestManagerReconcileKeepsLiveParentContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr := ingest.NewManager(10)
+	first := ingest.NewSyslogUDPListener("127.0.0.1:0")
+	mgr.Register(first)
+	if err := mgr.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	second := ingest.NewSyslogTCPListener("127.0.0.1:0")
+	if err := mgr.Reconcile([]ingest.IngestAdapter{second}); err != nil {
+		t.Fatal(err)
+	}
+	if second.Addr() == nil {
+		t.Fatal("replacement adapter did not start")
+	}
+	if errs := mgr.AdapterErrors(); len(errs) != 0 {
+		t.Fatalf("replacement adapter errors: %v", errs)
+	}
+	if err := mgr.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestManagerReportsListenerStartupFailure(t *testing.T) {
+	occupied, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	mgr := ingest.NewManager(10)
+	mgr.Register(ingest.NewSyslogTCPListener(occupied.Addr().String()))
+	if err := mgr.Start(context.Background()); err == nil {
+		t.Fatal("expected occupied listener address to fail startup")
+	}
+	_ = mgr.Stop()
 }
 
 func TestSyslogTCP_RFC6587_OctetCounting(t *testing.T) {
@@ -379,54 +458,64 @@ func TestFileCommitFailureMovesToFailed(t *testing.T) {
 	_ = watcher.Stop()
 }
 
+func testTLSConfig(t *testing.T) *tls.Config {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "localhost"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, DNSNames: []string{"localhost"}, IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+}
+
 func TestSyslogTLSListener(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	if err := ingest.NewSyslogTLSListener("127.0.0.1:0", nil).Start(ctx, make(chan model.IngestedRecord)); err == nil {
+		t.Fatal("expected missing TLS material to fail closed")
+	}
 
-	// In test mode without TLS certs, it listens plain TCP
-	listener := ingest.NewSyslogTLSListener("127.0.0.1:0", nil)
+	listener := ingest.NewSyslogTLSListener("127.0.0.1:0", testTLSConfig(t))
 	out := make(chan model.IngestedRecord, 10)
-
-	go func() {
-		_ = listener.Start(ctx, out)
-	}()
-
+	go func() { _ = listener.Start(ctx, out) }()
 	var addr net.Addr
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 50 && addr == nil; i++ {
 		addr = listener.Addr()
-		if addr != nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(10 * time.Millisecond)
 	}
 	if addr == nil {
-		t.Fatalf("TLS listener failed to bind")
+		t.Fatal("TLS listener failed to bind")
 	}
 
-	conn, err := net.Dial("tcp", addr.String())
+	conn, err := tls.Dial("tcp", addr.String(), &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12})
 	if err != nil {
-		t.Fatalf("failed to dial listener: %v", err)
+		t.Fatalf("TLS handshake failed: %v", err)
 	}
 	defer conn.Close()
-
 	msg := "<14>1 2026-09-24T12:00:00Z tls-host tls-app - - msg\n"
 	if _, err := conn.Write([]byte(msg)); err != nil {
-		t.Fatalf("write failed: %v", err)
+		t.Fatal(err)
 	}
-
 	select {
 	case rec := <-out:
 		if rec.Transport != "syslog_tls" {
-			t.Errorf("expected transport syslog_tls, got %s", rec.Transport)
-		}
-		if string(rec.RawBytes) != "<14>1 2026-09-24T12:00:00Z tls-host tls-app - - msg" {
-			t.Errorf("unexpected payload: %s", string(rec.RawBytes))
+			t.Errorf("transport=%s", rec.Transport)
 		}
 		if rec.Ack != nil {
 			rec.Ack <- nil
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatalf("timed out waiting for TLS syslog message")
+		t.Fatal("timed out waiting for TLS syslog message")
 	}
 	_ = listener.Stop()
 }

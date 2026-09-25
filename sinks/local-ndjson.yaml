@@ -1,0 +1,10 @@
+apiVersion: worm.io/v1
+kind: Sink
+metadata:
+  name: local-ndjson
+  version: 1.0.0
+  description: Local NDJSON integration output
+spec:
+  type: ndjson_output
+  enabled: false
+  path: /data/output/normalized.ndjson

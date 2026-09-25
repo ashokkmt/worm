@@ -101,6 +101,9 @@ func (d *CEFDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 
 	// Parse extension key-value pairs
 	extMap := parseCEFExtensions(extension)
+	if len(extMap) > MaxFields-6 {
+		return nil, fmt.Errorf("CEF extension field count exceeds maximum %d", MaxFields-6)
+	}
 	for k, v := range extMap {
 		fields[k] = v
 	}

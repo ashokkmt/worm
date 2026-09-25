@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -122,6 +124,12 @@ var sampleWorkload = [][]byte{
 	[]byte(`LEEF:2.0|IBM|QRadar|7.4|1002|^|src=10.0.0.1^dst=10.0.0.2^usrName=admin^action=login`),
 	// CEF
 	[]byte(`CEF:0|CrowdStrike|Falcon|7.0.0|1001|Process Rollup|5|src=10.0.1.5 dst=172.16.0.1 cs1=malicious.exe`),
+	// XML
+	[]byte(`<event><timestamp>2026-09-24T12:00:00Z</timestamp><source>vpn-01</source><action>login</action><src_ip>10.0.0.8</src_ip></event>`),
+	// CSV
+	[]byte("timestamp,source,action,src_ip\n2026-09-24T12:00:00Z,db-01,query,10.0.0.9\n"),
+	// Application-specific key/value text
+	[]byte(`timestamp=2026-09-24T12:00:00Z source=iot-gateway action=heartbeat status=ok`),
 }
 
 func BenchmarkPipeline_E2E(b *testing.B) {
@@ -210,4 +218,57 @@ func TestPressureProfiles(t *testing.T) {
 	if atomic.LoadInt64(&sink.delivered) < int64(stats.Normalized) {
 		t.Errorf("sink received fewer than normalized: %d vs %d", sink.delivered, stats.Normalized)
 	}
+}
+
+// TestRigorousPressureMatrix is opt-in because it intentionally writes a large
+// durable corpus. It covers every decoder family with concurrent producers and
+// fails unless every accepted child is normalized, quarantined, or still pending.
+func TestRigorousPressureMatrix(t *testing.T) {
+	if os.Getenv("WORM_RIGOROUS_BENCH") != "1" {
+		t.Skip("set WORM_RIGOROUS_BENCH=1 to run the sustained pressure profile")
+	}
+	total := 100000
+	if raw := os.Getenv("WORM_BENCH_EVENTS"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < len(sampleWorkload) {
+			t.Fatalf("invalid WORM_BENCH_EVENTS %q", raw)
+		}
+		total = n
+	}
+	tracker := &LatencyTracker{}
+	p, _, _ := setupTestPipeline(t, 8, tracker)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	start := time.Now()
+	const producers = 8
+	var wg sync.WaitGroup
+	var submitted atomic.Int64
+	for producer := 0; producer < producers; producer++ {
+		wg.Add(1)
+		go func(offset int) {
+			defer wg.Done()
+			for i := offset; i < total; i += producers {
+				data := sampleWorkload[i%len(sampleWorkload)]
+				err := p.SubmitWait(ctx, model.IngestedRecord{Transport: "benchmark", SourceIP: "127.0.0.1", RawBytes: data, ReceivedAt: time.Now().UTC()})
+				if err != nil {
+					t.Errorf("submit %d: %v", i, err)
+					return
+				}
+				submitted.Add(1)
+			}
+		}(producer)
+	}
+	wg.Wait()
+	p.Stop()
+	elapsed := time.Since(start)
+	stats := p.Stats()
+	if ok, reason := stats.VerifyInvariant(); !ok {
+		t.Fatal(reason)
+	}
+	if stats.Accepted != submitted.Load() {
+		t.Fatalf("accepted=%d submitted=%d", stats.Accepted, submitted.Load())
+	}
+	p50, p95, p99, p999, max := tracker.Percentiles()
+	t.Logf("events=%d elapsed=%s eps=%.1f p50=%s p95=%s p99=%s p99.9=%s max=%s normalized=%d quarantined=%d pending=%d",
+		stats.Accepted, elapsed, float64(stats.Accepted)/elapsed.Seconds(), p50, p95, p99, p999, max, stats.Normalized, stats.Quarantined, stats.Pending)
 }

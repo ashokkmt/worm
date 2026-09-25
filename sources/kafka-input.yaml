@@ -6,7 +6,7 @@ metadata:
   description: Kafka consumer group input adapter for raw event intake
 spec:
   type: kafka_input
-  enabled: true
+  enabled: false
   brokers:
     - kafka:9092
   topic: worm.raw.events

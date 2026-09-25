@@ -6,7 +6,7 @@ metadata:
   description: HTTP SIEM delivery sink for enterprise event ingest
 spec:
   type: http_output
-  enabled: true
+  enabled: false
   delivery:
     format: ndjson
     batchEvents: 500

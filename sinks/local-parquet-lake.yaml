@@ -6,8 +6,8 @@ metadata:
   description: Parquet columnar data lake output partitioned by date and category
 spec:
   type: parquet_output
-  enabled: true
-  path: /tmp/worm/lake
+  enabled: false
+  path: /data/lake
   partitionBy:
     - event_date
     - category_name

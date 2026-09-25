@@ -1,0 +1,5 @@
+=== RUN   TestRigorousPressureMatrix
+    pressure_test.go:272: events=10000 elapsed=22.096490792s eps=452.6 p50=5.587194s p95=20.074334s p99=21.690751s p99.9=22.056034s max=22.09278s normalized=10000 quarantined=0 pending=0
+--- PASS: TestRigorousPressureMatrix (22.11s)
+PASS
+ok  	worm/test/pressure	22.595s

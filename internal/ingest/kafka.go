@@ -2,10 +2,14 @@ package ingest
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
 	"worm/internal/model"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
 
 // KafkaInputConfig defines parameters for consuming raw datagrams from an Apache Kafka topic.
@@ -15,6 +19,9 @@ type KafkaInputConfig struct {
 	Topics        []string      `json:"topics"`
 	ConsumerGroup string        `json:"consumer_group"`
 	PollTimeout   time.Duration `json:"poll_timeout"`
+	Username      string        `json:"-"`
+	Password      string        `json:"-"`
+	TLSConfig     *tls.Config   `json:"-"`
 }
 
 // KafkaConsumerRecord represents a record fetched from Kafka.
@@ -34,7 +41,49 @@ type KafkaConsumerClient interface {
 	Close() error
 }
 
-// MemoryKafkaConsumer is a thread-safe simulator for testing Kafka ingestion.
+// BrokerKafkaConsumer is a real Apache Kafka consumer with auto-commit disabled.
+type BrokerKafkaConsumer struct{ client *kgo.Client }
+
+func NewBrokerKafkaConsumer(cfg KafkaInputConfig) (*BrokerKafkaConsumer, error) {
+	if len(cfg.Brokers) == 0 || len(cfg.Topics) == 0 || cfg.ConsumerGroup == "" {
+		return nil, fmt.Errorf("kafka input requires brokers, topics, and consumer group")
+	}
+	opts := []kgo.Opt{kgo.SeedBrokers(cfg.Brokers...), kgo.ConsumeTopics(cfg.Topics...), kgo.ConsumerGroup(cfg.ConsumerGroup), kgo.DisableAutoCommit(), kgo.BlockRebalanceOnPoll()}
+	if cfg.Username != "" {
+		opts = append(opts, kgo.SASL(plain.Auth{User: cfg.Username, Pass: cfg.Password}.AsMechanism()))
+	}
+	if cfg.TLSConfig != nil {
+		opts = append(opts, kgo.DialTLSConfig(cfg.TLSConfig))
+	}
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &BrokerKafkaConsumer{client: client}, nil
+}
+
+func (b *BrokerKafkaConsumer) Poll(ctx context.Context, timeout time.Duration) ([]*KafkaConsumerRecord, error) {
+	pollCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	fetches := b.client.PollFetches(pollCtx)
+	if errs := fetches.Errors(); len(errs) > 0 {
+		if pollCtx.Err() != nil && ctx.Err() == nil {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("kafka fetch: %v", errs)
+	}
+	result := make([]*KafkaConsumerRecord, 0, fetches.NumRecords())
+	fetches.EachRecord(func(r *kgo.Record) {
+		result = append(result, &KafkaConsumerRecord{Topic: r.Topic, Partition: int(r.Partition), Offset: r.Offset, Key: append([]byte(nil), r.Key...), Value: append([]byte(nil), r.Value...), Timestamp: r.Timestamp})
+	})
+	return result, nil
+}
+func (b *BrokerKafkaConsumer) CommitOffset(ctx context.Context, topic string, partition int, offset int64) error {
+	return b.client.CommitRecords(ctx, &kgo.Record{Topic: topic, Partition: int32(partition), Offset: offset})
+}
+func (b *BrokerKafkaConsumer) Close() error { b.client.Close(); return nil }
+
+// MemoryKafkaConsumer is an explicit thread-safe test double for Kafka ingestion.
 type MemoryKafkaConsumer struct {
 	mu        sync.Mutex
 	queue     []*KafkaConsumerRecord
@@ -97,18 +146,30 @@ type KafkaAdapter struct {
 	closed bool
 }
 
-// NewKafkaAdapter creates a new KafkaAdapter. If client is nil, it uses an in-memory queue.
+// NewKafkaAdapter creates an adapter. Production callers must pass a broker client;
+// tests may pass MemoryKafkaConsumer explicitly.
 func NewKafkaAdapter(cfg KafkaInputConfig, client KafkaConsumerClient) *KafkaAdapter {
 	if cfg.PollTimeout <= 0 {
 		cfg.PollTimeout = 250 * time.Millisecond
 	}
 	if client == nil {
-		client = NewMemoryKafkaConsumer(nil)
+		panic("nil Kafka consumer: use NewBrokerKafkaAdapter for production or an explicit test double")
 	}
 	return &KafkaAdapter{
 		cfg:    cfg,
 		client: client,
 	}
+}
+
+func NewBrokerKafkaAdapter(cfg KafkaInputConfig) (*KafkaAdapter, error) {
+	if len(cfg.Topics) == 0 {
+		return nil, fmt.Errorf("kafka input requires at least one topic")
+	}
+	client, err := NewBrokerKafkaConsumer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return NewKafkaAdapter(cfg, client), nil
 }
 
 func (a *KafkaAdapter) Name() string {
@@ -145,11 +206,9 @@ func (a *KafkaAdapter) Start(ctx context.Context, out chan<- model.IngestedRecor
 		for _, msg := range records {
 			ackChan := make(chan error, 1)
 			ingested := model.IngestedRecord{
-				RawBytes:   msg.Value,
-				Transport:  "kafka_input",
-				SourceIP:   "kafka://" + msg.Topic,
-				ReceivedAt: time.Now().UTC(),
-				Ack:        ackChan,
+				RawBytes: msg.Value, Transport: "kafka_input", SourceIP: "kafka://" + msg.Topic,
+				ReceivedAt: time.Now().UTC(), Ack: ackChan,
+				Metadata: model.ReceiveMetadata{ConnectionID: a.cfg.Name, KafkaTopic: msg.Topic, KafkaPartition: msg.Partition, KafkaOffset: msg.Offset, KafkaKey: string(msg.Key)},
 			}
 
 			select {

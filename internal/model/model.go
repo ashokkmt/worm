@@ -13,30 +13,50 @@ const (
 	StatusNormalized  RawStatus = "normalized"
 	StatusQuarantined RawStatus = "quarantined"
 	StatusPending     RawStatus = "pending"
+	StatusPartial     RawStatus = "partial"
 )
 
 // IngestedRecord represents a raw datagram or payload accepted at any boundary
 // before it is durably committed to the RawStore.
 type IngestedRecord struct {
-	Transport  string     `json:"transport"`   // e.g. "syslog_udp", "syslog_tcp", "http_post", "file_spool", "stdin"
-	SourceIP   string     `json:"source_ip"`   // remote sender IP or "local"
-	SourcePort int        `json:"source_port"` // remote sender port or 0
-	RawBytes   []byte     `json:"raw_bytes"`   // exact unmodified bytes received on the wire
-	ReceivedAt time.Time  `json:"received_at"` // ingress timestamp
-	Ack        chan error `json:"-"`           // optional downstream raw commit acknowledgement
+	Transport     string          `json:"transport"`          // e.g. "syslog_udp", "syslog_tcp", "http_post", "file_spool", "stdin"
+	SourceIP      string          `json:"source_ip"`          // remote sender IP or "local"
+	SourcePort    int             `json:"source_port"`        // remote sender port or 0
+	RawBytes      []byte          `json:"raw_bytes"`          // exact unmodified bytes received on the wire
+	ReceivedAt    time.Time       `json:"received_at"`        // ingress timestamp
+	Metadata      ReceiveMetadata `json:"metadata,omitempty"` // bounded transport-specific lineage
+	Ack           chan error      `json:"-"`                  // optional downstream raw commit acknowledgement
+	ExistingRawID string          `json:"-"`                  // internal restart recovery marker
+}
+
+// ReceiveMetadata captures bounded transport coordinates for forensic trace,
+// exact resume, and duplicate analysis.
+type ReceiveMetadata struct {
+	ConnectionID   string `json:"connection_id,omitempty"`
+	Listener       string `json:"listener,omitempty"`
+	RequestID      string `json:"request_id,omitempty"`
+	FilePath       string `json:"file_path,omitempty"`
+	FileOffset     int64  `json:"file_offset,omitempty"`
+	ObjectKey      string `json:"object_key,omitempty"`
+	Watermark      string `json:"watermark,omitempty"`
+	KafkaTopic     string `json:"kafka_topic,omitempty"`
+	KafkaPartition int    `json:"kafka_partition,omitempty"`
+	KafkaOffset    int64  `json:"kafka_offset,omitempty"`
+	KafkaKey       string `json:"kafka_key,omitempty"`
 }
 
 // RawEvent represents a durably committed, cryptographically hashed raw log record.
 type RawEvent struct {
-	RawID      string    `json:"raw_id"`      // immutable monotonic ID e.g. "worm-raw-20260920-00000001"
-	RawSHA256  string    `json:"raw_sha256"`  // hex-encoded SHA-256 digest
-	ByteCount  int       `json:"byte_count"`  // exact size of raw payload in bytes
-	Transport  string    `json:"transport"`   // transport protocol/channel
-	SourceIP   string    `json:"source_ip"`   // remote source IP
-	SourcePort int       `json:"source_port"` // remote source port
-	ReceivedAt time.Time `json:"received_at"` // exact reception timestamp
-	Payload    []byte    `json:"payload"`     // verbatim wire bytes
-	Status     RawStatus `json:"status"`      // accepted, normalized, quarantined
+	RawID      string          `json:"raw_id"`      // immutable monotonic ID e.g. "worm-raw-20260920-00000001"
+	RawSHA256  string          `json:"raw_sha256"`  // hex-encoded SHA-256 digest
+	ByteCount  int             `json:"byte_count"`  // exact size of raw payload in bytes
+	Transport  string          `json:"transport"`   // transport protocol/channel
+	SourceIP   string          `json:"source_ip"`   // remote source IP
+	SourcePort int             `json:"source_port"` // remote source port
+	Metadata   ReceiveMetadata `json:"metadata,omitempty"`
+	ReceivedAt time.Time       `json:"received_at"` // exact reception timestamp
+	Payload    []byte          `json:"payload"`     // verbatim wire bytes
+	Status     RawStatus       `json:"status"`      // accepted, normalized, quarantined
 }
 
 // ProcessingStep represents a single stage execution record in the event's audit trail.
@@ -102,11 +122,13 @@ type QuarantineEntry struct {
 // LossAccountingStats tracks the mathematical invariant:
 // accepted = normalized + quarantined + pending
 type LossAccountingStats struct {
-	Accepted    int64 `json:"accepted"`
-	Normalized  int64 `json:"normalized"`
-	Quarantined int64 `json:"quarantined"`
-	Pending     int64 `json:"pending"`
-	Delivered   int64 `json:"delivered"`
+	Accepted        int64 `json:"accepted"`
+	Normalized      int64 `json:"normalized"`
+	Quarantined     int64 `json:"quarantined"`
+	Pending         int64 `json:"pending"`
+	Delivered       int64 `json:"delivered"`
+	DeliveryPending int64 `json:"delivery_pending"`
+	DeliveryFailed  int64 `json:"delivery_failed"`
 }
 
 // VerifyInvariant validates that no records are dropped or silently lost.

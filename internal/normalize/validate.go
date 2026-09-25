@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"worm/internal/model"
+	"worm/internal/ocsf"
 )
 
 // Validator enforces OCSF taxonomy contracts, required field presence,
@@ -34,6 +35,9 @@ func (v *Validator) Validate(norm *model.NormalizedEvent) error {
 	if norm.Worm.RawSHA256 == "" {
 		return errors.New("missing mandatory worm.raw_sha256")
 	}
+	if norm.Worm.SchemaVersion != ocsf.Version {
+		return fmt.Errorf("unsupported OCSF schema version %q; pinned version is %s", norm.Worm.SchemaVersion, ocsf.Version)
+	}
 
 	// 2. Mandatory OCSF root fields
 	if norm.OCSF == nil {
@@ -48,6 +52,9 @@ func (v *Validator) Validate(norm *model.NormalizedEvent) error {
 	className, hasClass := norm.OCSF["class_name"]
 	if !hasClass || className == nil || strings.TrimSpace(fmt.Sprintf("%v", className)) == "" {
 		return errors.New("missing mandatory OCSF 'class_name'")
+	}
+	if err := ocsf.ValidateTaxonomy(norm.Worm.SourceCategory, fmt.Sprint(catName), fmt.Sprint(className)); err != nil {
+		return err
 	}
 
 	// Event timestamp is required in OCSF (must be epoch ms > 0)

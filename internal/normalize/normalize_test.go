@@ -280,9 +280,11 @@ func TestValidator_SchemaValidation(t *testing.T) {
 	baseNorm := func() *model.NormalizedEvent {
 		return &model.NormalizedEvent{
 			Worm: model.WormEnvelope{
-				EventID:   "worm-evt-0001",
-				RawID:     "worm-raw-0001",
-				RawSHA256: "abc123hash",
+				EventID:        "worm-evt-0001",
+				RawID:          "worm-raw-0001",
+				RawSHA256:      "abc123hash",
+				SourceCategory: "network_device",
+				SchemaVersion:  "1.3.0",
 			},
 			OCSF: map[string]any{
 				"category_name": "Network Activity",

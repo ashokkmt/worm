@@ -3,20 +3,32 @@
   "title": "WORM Source Resource Schema",
   "description": "JSON schema for declarative YAML ingestion Source resources in WORM",
   "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "spec"
+  ],
   "additionalProperties": false,
   "properties": {
     "apiVersion": {
       "type": "string",
-      "enum": ["worm.io/v1"]
+      "enum": [
+        "worm.io/v1"
+      ]
     },
     "kind": {
       "type": "string",
-      "enum": ["Source"]
+      "enum": [
+        "Source"
+      ]
     },
     "metadata": {
       "type": "object",
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "additionalProperties": false,
       "properties": {
         "name": {
@@ -33,7 +45,10 @@
     },
     "spec": {
       "type": "object",
-      "required": ["type", "enabled"],
+      "required": [
+        "type",
+        "enabled"
+      ],
       "additionalProperties": false,
       "properties": {
         "type": {
@@ -41,8 +56,7 @@
           "enum": [
             "cloud_pull",
             "kafka_input",
-            "syslog_tls",
-            "s3_watch"
+            "syslog_tls"
           ]
         },
         "enabled": {
@@ -52,25 +66,43 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "url": { "type": "string" },
-            "timeout": { "type": "string" },
-            "interval": { "type": "string" },
-            "batchSize": { "type": "integer" },
-            "watermarkPath": { "type": "string" },
-            "authHeader": { "type": "string" },
-            "secretRef": { "type": "string" }
+            "url": {
+              "type": "string"
+            },
+            "timeout": {
+              "type": "string"
+            },
+            "interval": {
+              "type": "string"
+            },
+            "batchSize": {
+              "type": "integer"
+            },
+            "watermarkPath": {
+              "type": "string"
+            },
+            "authHeader": {
+              "type": "string"
+            },
+            "secretRef": {
+              "type": "string"
+            }
           }
         },
         "brokers": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "topic": {
           "type": "string"
         },
         "topics": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": {
+            "type": "string"
+          }
         },
         "consumerGroup": {
           "type": "string"
@@ -85,6 +117,18 @@
           "type": "integer"
         },
         "secretRef": {
+          "type": "string"
+        },
+        "listen": {
+          "type": "string"
+        },
+        "tlsCertFile": {
+          "type": "string"
+        },
+        "tlsKeyFile": {
+          "type": "string"
+        },
+        "clientCAFile": {
           "type": "string"
         }
       }

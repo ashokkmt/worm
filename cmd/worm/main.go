@@ -18,6 +18,7 @@ import (
 	"worm/internal/api"
 	"worm/internal/cli"
 	"worm/internal/connections"
+	"worm/internal/decode"
 	"worm/internal/ingest"
 	"worm/internal/model"
 	"worm/internal/output"
@@ -237,7 +238,8 @@ func main() {
 	sourcesDir := flag.String("sources-dir", "sources", "Path to YAML Ingestion Source resources directory")
 	sinksDir := flag.String("sinks-dir", "sinks", "Path to YAML Delivery Sink resources directory")
 	workers := flag.Int("workers", 4, "Number of concurrent pipeline workers")
-	readStdin := flag.Bool("stdin", false, "Read logs from stdin line-by-line")
+	readStdin := flag.Bool("stdin", false, "Read logs from stdin")
+	stdinFraming := flag.String("stdin-framing", "line", "stdin framing: line, ndjson, or document (multiline JSON/XML)")
 	verifyRawID := flag.String("verify", "", "Cryptographically verify a raw record by raw_id")
 	verifyEventID := flag.String("verify-event", "", "Cryptographically verify a normalized event by event_id")
 
@@ -251,7 +253,7 @@ func main() {
 	// Multi-transport ingestion flags
 	syslogUDP := flag.String("syslog-udp", ":514", "UDP address for Syslog listener (:1514 for non-root, 'none' to disable)")
 	syslogTCP := flag.String("syslog-tcp", ":514", "TCP address for Syslog listener (:1514 for non-root, 'none' to disable)")
-	syslogTLS := flag.String("syslog-tls", ":6514", "TCP address for Syslog TLS (RFC 5425) listener (:7514 for non-root, 'none' to disable)")
+	syslogTLS := flag.String("syslog-tls", "none", "TCP address for Syslog TLS (RFC 5425) listener (:7514 for non-root, 'none' to disable)")
 	tlsCert := flag.String("tls-cert", "", "Path to X.509 certificate file for Syslog TLS")
 	tlsKey := flag.String("tls-key", "", "Path to private key file for Syslog TLS")
 	tlsClientCA := flag.String("tls-client-ca", "", "Path to optional client CA file for Syslog TLS mutual authentication (mTLS)")
@@ -394,35 +396,26 @@ func main() {
 		}
 	}
 
-	if *sourcesDir != "" {
-		if _, err := os.Stat(*sourcesDir); err == nil {
-			srcMgr := connections.NewManager(*sourcesDir)
-			_ = srcMgr.LoadDir(*sourcesDir)
-			fmt.Fprintf(os.Stderr, " Loaded %d sources from %s\n", len(srcMgr.List()), *sourcesDir)
-		}
-	}
-
-	// 2. Configure Output Sinks
-	var activeSinks []output.OutputSink
+	// 2. Configure the atomically replaceable output snapshot.
+	staticSinks := map[string]output.OutputSink{}
 	if *stdoutOutput {
-		activeSinks = append(activeSinks, output.NewStdoutSink())
+		staticSinks["cli-stdout"] = output.NewStdoutSink()
 	}
 	if *outputFile != "" && *outputFile != "none" {
 		fileSink, err := output.NewNDJSONSink(*outputFile)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to create NDJSON file sink at %s: %v\n", *outputFile, err)
 		} else {
-			activeSinks = append(activeSinks, fileSink)
+			staticSinks["cli-ndjson"] = fileSink
 			fmt.Fprintf(os.Stderr, " Output sink active: %s (NDJSON)\n", *outputFile)
 		}
 	}
-
-	var compositeSink output.OutputSink
-	if len(activeSinks) > 0 {
-		compositeSink = output.NewMultiSink(activeSinks...)
-	} else {
-		compositeSink = output.NewStdoutSink()
+	dynamicSink := output.NewDynamicSink()
+	if err := dynamicSink.Replace(staticSinks); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: output initialization failed: %v\n", err)
+		os.Exit(1)
 	}
+	var compositeSink output.OutputSink = dynamicSink
 
 	// 3. Initialize & Start Pipeline
 	p := pipeline.New(pipeline.Config{
@@ -434,55 +427,78 @@ func main() {
 
 	// 4. Initialize Ingestion Adapters
 	mgr := ingest.NewManager(2000)
+	var staticAdapters []ingest.IngestAdapter
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	if *syslogUDP != "" && *syslogUDP != "none" {
-		mgr.Register(ingest.NewSyslogUDPListener(*syslogUDP))
+		staticAdapters = append(staticAdapters, ingest.NewSyslogUDPListener(*syslogUDP))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Syslog UDP on %s\n", *syslogUDP)
 	}
 	if *syslogTCP != "" && *syslogTCP != "none" {
-		mgr.Register(ingest.NewSyslogTCPListener(*syslogTCP))
+		staticAdapters = append(staticAdapters, ingest.NewSyslogTCPListener(*syslogTCP))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Syslog TCP on %s\n", *syslogTCP)
 	}
 	if *syslogTLS != "" && *syslogTLS != "none" {
-		var tlsCfg *tls.Config
-		if *tlsCert != "" && *tlsKey != "" {
-			cert, err := tls.LoadX509KeyPair(*tlsCert, *tlsKey)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "WARNING: Failed to load Syslog TLS cert/key: %v\n", err)
-			} else {
-				tlsCfg = &tls.Config{
-					Certificates: []tls.Certificate{cert},
-					MinVersion:   tls.VersionTLS12,
-				}
-				if *tlsClientCA != "" {
-					caCert, err := os.ReadFile(*tlsClientCA)
-					if err != nil {
-						fmt.Fprintf(os.Stderr, "WARNING: Failed to read client CA: %v\n", err)
-					} else {
-						caPool := x509.NewCertPool()
-						caPool.AppendCertsFromPEM(caCert)
-						tlsCfg.ClientCAs = caPool
-						tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
-					}
-				}
-			}
+		if *tlsCert == "" || *tlsKey == "" {
+			fmt.Fprintln(os.Stderr, "FATAL: -syslog-tls requires -tls-cert and -tls-key")
+			os.Exit(1)
 		}
-		mgr.Register(ingest.NewSyslogTLSListener(*syslogTLS, tlsCfg))
+		cert, err := tls.LoadX509KeyPair(*tlsCert, *tlsKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: failed to load Syslog TLS cert/key: %v\n", err)
+			os.Exit(1)
+		}
+		tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}
+		if *tlsClientCA != "" {
+			caCert, err := os.ReadFile(*tlsClientCA)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "FATAL: failed to read Syslog TLS client CA: %v\n", err)
+				os.Exit(1)
+			}
+			caPool := x509.NewCertPool()
+			if !caPool.AppendCertsFromPEM(caCert) {
+				fmt.Fprintf(os.Stderr, "FATAL: Syslog TLS client CA contains no valid certificates: %s\n", *tlsClientCA)
+				os.Exit(1)
+			}
+			tlsCfg.ClientCAs = caPool
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+		}
+		staticAdapters = append(staticAdapters, ingest.NewSyslogTLSListener(*syslogTLS, tlsCfg))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Syslog TLS (RFC 5425) on %s\n", *syslogTLS)
 	}
 	if *httpAddr != "" && *httpAddr != "none" {
-		mgr.Register(ingest.NewHTTPListener(*httpAddr, *httpKey))
+		staticAdapters = append(staticAdapters, ingest.NewHTTPListener(*httpAddr, *httpKey))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: HTTP POST on %s/api/v1/ingest\n", *httpAddr)
 	}
 	if *inboxDir != "" && *inboxDir != "none" {
-		mgr.Register(ingest.NewFileWatcher(*inboxDir, 1*time.Second))
+		staticAdapters = append(staticAdapters, ingest.NewFileWatcher(*inboxDir, 1*time.Second))
 		fmt.Fprintf(os.Stderr, " Ingest adapter configured: Spool Inbox on %s\n", *inboxDir)
 	}
 
+	connMgr := connections.NewManager(*sinksDir)
+	connMgr.SetResourceDirs(*sourcesDir, *sinksDir)
+	if *sourcesDir != "" {
+		if err := connMgr.LoadDir(*sourcesDir); err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: source configuration: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if *sinksDir != "" {
+		if err := connMgr.LoadDir(*sinksDir); err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: sink configuration: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	runtimeReconciler := &connections.Runtime{Ingest: mgr, Output: dynamicSink, StaticAdapters: staticAdapters, StaticSinks: staticSinks, Secrets: connections.SecretResolver{Dir: "secrets"}}
+	if err := runtimeReconciler.Reconcile(connMgr.List()); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: runtime reconcile: %v\n", err)
+		os.Exit(1)
+	}
+	connMgr.SetReconciler(runtimeReconciler.Reconcile)
 	if err := mgr.Start(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "WARNING: Ingest manager start error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Ingest manager start error: %v\n", err)
+		os.Exit(1)
 	}
 	p.ConnectIngest(ctx, mgr.Channel())
 
@@ -503,14 +519,6 @@ func main() {
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
 		uiServer.SetIngestTracker(mgr)
-		connMgr := connections.NewManager(*sinksDir)
-		connMgr.SetResourceDirs(*sourcesDir, *sinksDir)
-		if *sourcesDir != "" {
-			_ = connMgr.LoadDir(*sourcesDir)
-		}
-		if *sinksDir != "" {
-			_ = connMgr.LoadDir(*sinksDir)
-		}
 		uiServer.SetConnManager(connMgr, *sinksDir)
 		if err := uiServer.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
@@ -521,8 +529,15 @@ func main() {
 
 	hasListeners := (*syslogUDP != "" && *syslogUDP != "none") ||
 		(*syslogTCP != "" && *syslogTCP != "none") ||
+		(*syslogTLS != "" && *syslogTLS != "none") ||
 		(*httpAddr != "" && *httpAddr != "none") ||
 		(*inboxDir != "" && *inboxDir != "none")
+	for _, configured := range connMgr.List() {
+		if configured.Kind == "Source" && configured.Spec.Enabled {
+			hasListeners = true
+			break
+		}
+	}
 
 	doneFile := make(chan struct{})
 	if *inputFile != "" {
@@ -545,34 +560,40 @@ func main() {
 	if *readStdin || isPipe {
 		go func() {
 			defer close(doneReading)
-			scanner := bufio.NewScanner(os.Stdin)
-			buf := make([]byte, 64*1024)
-			scanner.Buffer(buf, 1024*1024)
-
-			for scanner.Scan() {
-				line := scanner.Bytes()
-				if len(line) == 0 {
-					continue
+			submit := func(payload []byte) {
+				if len(payload) == 0 {
+					return
 				}
-
-				payload := make([]byte, len(line))
-				copy(payload, line)
-
-				rec := model.IngestedRecord{
-					Transport:  "stdin",
-					SourceIP:   "127.0.0.1",
-					SourcePort: 0,
-					RawBytes:   payload,
-					ReceivedAt: time.Now().UTC(),
-				}
-
+				rec := model.IngestedRecord{Transport: "stdin", SourceIP: "127.0.0.1", RawBytes: append([]byte(nil), payload...), ReceivedAt: time.Now().UTC(), Metadata: model.ReceiveMetadata{Listener: "stdin"}}
 				if err := p.SubmitSync(context.Background(), rec); err != nil {
 					fmt.Fprintf(os.Stderr, "WARN: failed to ingest record: %v\n", err)
 				}
 			}
-
-			if err := scanner.Err(); err != nil && err != io.EOF {
-				fmt.Fprintf(os.Stderr, "WARN: stdin scanner error: %v\n", err)
+			switch *stdinFraming {
+			case "document":
+				payload, err := io.ReadAll(io.LimitReader(os.Stdin, decode.MaxPayloadBytes+1))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "WARN: stdin read error: %v\n", err)
+					return
+				}
+				if len(payload) > decode.MaxPayloadBytes {
+					fmt.Fprintf(os.Stderr, "WARN: stdin document exceeds %d bytes\n", decode.MaxPayloadBytes)
+					return
+				}
+				submit(payload)
+			case "line", "ndjson":
+				scanner := bufio.NewScanner(os.Stdin)
+				scanner.Buffer(make([]byte, 64*1024), decode.MaxPayloadBytes)
+				for scanner.Scan() {
+					if len(scanner.Bytes()) > 0 {
+						submit(scanner.Bytes())
+					}
+				}
+				if err := scanner.Err(); err != nil && err != io.EOF {
+					fmt.Fprintf(os.Stderr, "WARN: stdin scanner error: %v\n", err)
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "WARN: invalid -stdin-framing %q (expected line, ndjson, document)\n", *stdinFraming)
 			}
 		}()
 	}

@@ -178,6 +178,10 @@ func (p *CloudPoller) pollOnce(ctx context.Context, out chan<- model.IngestedRec
 			SourceIP:   p.cfg.EndpointURL,
 			ReceivedAt: time.Now().UTC(),
 			Ack:        ackChan,
+			Metadata: model.ReceiveMetadata{
+				ConnectionID: p.cfg.Name,
+				Watermark:    currentWM,
+			},
 		}
 
 		select {

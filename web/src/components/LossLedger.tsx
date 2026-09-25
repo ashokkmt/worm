@@ -8,6 +8,8 @@ interface LossLedgerProps {
   quarantined: number;
   pending: number;
   delivered: number;
+  deliveryPending: number;
+  deliveryFailed: number;
   audit?: LossAudit;
 }
 
@@ -17,6 +19,8 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
   quarantined,
   pending,
   delivered,
+  deliveryPending,
+  deliveryFailed,
   audit,
 }) => {
   const normPct = accepted > 0 ? ((normalized / accepted) * 100).toFixed(1) : '0.0';
@@ -42,7 +46,7 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
           {isValid ? (
             <span className="flex items-center text-xs font-mono font-medium text-emerald-400 bg-emerald-950/70 px-2.5 py-1 rounded-full border border-emerald-800/80 shadow-xs">
               <ShieldCheck className="w-3.5 h-3.5 mr-1.5 shrink-0 text-emerald-400" />
-              Audit Passed: Zero-Loss Guaranteed
+              Accounting Passed: Zero Unaccounted
             </span>
           ) : (
             <span className="flex items-center text-xs font-mono font-medium text-rose-400 bg-rose-950/70 px-2.5 py-1 rounded-full border border-rose-800/80 shadow-xs">
@@ -53,8 +57,8 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
         </div>
       </div>
 
-      {/* Grid of 5 counters */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      {/* Processing and delivery counters */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <div className="bg-[#0d1117] p-3 rounded-md border border-[#21262d] transition-colors hover:border-[#30363d]">
           <div className="text-[11px] font-mono text-[#8b949e] uppercase font-semibold">Accepted Ingest</div>
           <div className="text-xl font-mono font-bold text-[#f0f6fc] mt-1 tracking-tight">{accepted.toLocaleString()}</div>
@@ -84,6 +88,18 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
           <div className="text-xl font-mono font-bold text-blue-400 mt-1 tracking-tight">{delivered.toLocaleString()}</div>
           <div className="text-[10px] font-mono text-[#8b949e] mt-0.5">sinks emitted</div>
         </div>
+
+        <div className="bg-[#0d1117] p-3 rounded-md border border-[#21262d] transition-colors hover:border-amber-900/60">
+          <div className="text-[11px] font-mono text-amber-400 uppercase font-semibold">Delivery Pending</div>
+          <div className="text-xl font-mono font-bold text-amber-400 mt-1 tracking-tight">{deliveryPending.toLocaleString()}</div>
+          <div className="text-[10px] font-mono text-[#8b949e] mt-0.5">durable outbox</div>
+        </div>
+
+        <div className="bg-[#0d1117] p-3 rounded-md border border-[#21262d] transition-colors hover:border-rose-900/60">
+          <div className="text-[11px] font-mono text-rose-400 uppercase font-semibold">Delivery Failed</div>
+          <div className="text-xl font-mono font-bold text-rose-400 mt-1 tracking-tight">{deliveryFailed.toLocaleString()}</div>
+          <div className="text-[10px] font-mono text-[#8b949e] mt-0.5">terminal attempts</div>
+        </div>
       </div>
 
       {/* Segmented Audit Bar */}
@@ -110,7 +126,7 @@ export const LossLedger: React.FC<LossLedgerProps> = ({
           <span>Reason: <span className="text-[#c9d1d9] font-medium">{auditReason}</span></span>
           <span className="font-medium">
             {isValid
-              ? <span className="text-emerald-400">Loss rate: 0.000000% (No dropped datagrams)</span>
+              ? <span className="text-emerald-400">Unaccounted accepted events: 0</span>
               : <span className="text-rose-400">Loss rate: AUDIT FAILED — {auditReason}</span>}
           </span>
         </div>

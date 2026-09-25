@@ -105,53 +105,63 @@ func (h *HTTPListener) Start(ctx context.Context, out chan<- model.IngestedRecor
 		isExplicitNDJSON := strings.Contains(cType, "ndjson") || strings.Contains(cType, "x-ndjson")
 
 		var count int
+		requestID := r.Header.Get("X-Request-ID")
+		if requestID == "" {
+			requestID = fmt.Sprintf("worm-http-%d", time.Now().UnixNano())
+		}
+		submit := func(payload []byte) error {
+			ack := make(chan error, 1)
+			rec := model.IngestedRecord{Transport: "http-post", SourceIP: clientIP, SourcePort: clientPort, RawBytes: payload, ReceivedAt: time.Now().UTC(), Ack: ack, Metadata: model.ReceiveMetadata{Listener: h.addr, RequestID: requestID}}
+			select {
+			case out <- rec:
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-r.Context().Done():
+				return r.Context().Err()
+			}
+			timer := time.NewTimer(15 * time.Second)
+			defer timer.Stop()
+			select {
+			case err := <-ack:
+				return err
+			case <-timer.C:
+				return fmt.Errorf("raw durability acknowledgement timed out")
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-r.Context().Done():
+				return r.Context().Err()
+			}
+		}
 
 		if isExplicitNDJSON {
-			// Line-delimited NDJSON: split on \n without mutilating tokens
-			lines := bytes.Split(bodyBytes, []byte("\n"))
-			for _, line := range lines {
+			for _, line := range bytes.Split(bodyBytes, []byte("\n")) {
 				if len(bytes.TrimSpace(line)) == 0 {
 					continue
 				}
-				rec := model.IngestedRecord{
-					Transport:  "http-post",
-					SourceIP:   clientIP,
-					SourcePort: clientPort,
-					RawBytes:   line,
-					ReceivedAt: time.Now().UTC(),
-				}
-				select {
-				case out <- rec:
-					count++
-				case <-ctx.Done():
-					http.Error(w, `{"error": "server shutting down"}`, http.StatusServiceUnavailable)
+				if err := submit(append([]byte(nil), line...)); err != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_ = json.NewEncoder(w).Encode(map[string]any{"status": "retry", "accepted": count, "rejected": 1, "error": err.Error(), "request_id": requestID})
 					return
 				}
+				count++
 			}
 		} else {
-			// Single structured document (JSON object/array, XML, or verbatim document)
-			// Preserves exact byte-for-byte wire representation without newline splitting or byte trimming!
-			rec := model.IngestedRecord{
-				Transport:  "http-post",
-				SourceIP:   clientIP,
-				SourcePort: clientPort,
-				RawBytes:   bodyBytes,
-				ReceivedAt: time.Now().UTC(),
-			}
-			select {
-			case out <- rec:
-				count = 1
-			case <-ctx.Done():
-				http.Error(w, `{"error": "server shutting down"}`, http.StatusServiceUnavailable)
+			if err := submit(bodyBytes); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_ = json.NewEncoder(w).Encode(map[string]any{"status": "retry", "accepted": 0, "rejected": 1, "error": err.Error(), "request_id": requestID})
 				return
 			}
+			count = 1
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":   "accepted",
-			"accepted": count,
+			"status":     "accepted",
+			"accepted":   count,
+			"request_id": requestID,
 		})
 	})
 

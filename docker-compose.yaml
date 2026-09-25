@@ -8,16 +8,15 @@ services:
       dockerfile: Dockerfile
     container_name: worm-core
     ports:
-      - "514:514/udp"
-      - "514:514/tcp"
-      - "6514:6514/tcp"
+      - "1514:1514/udp"
+      - "1514:1514/tcp"
       - "8080:8080/tcp"
       - "9090:9090/tcp"
     volumes:
-      - ./data:/data
-      - ./packs:/worm/packs:ro
-      - ./sources:/worm/sources:ro
-      - ./sinks:/worm/sinks:ro
+      - worm-data:/data
+      - worm-packs:/worm/packs
+      - worm-sources:/worm/sources
+      - worm-sinks:/worm/sinks
     environment:
       - WORM_LOG_LEVEL=info
     restart: unless-stopped
@@ -30,7 +29,7 @@ services:
       context: .
       dockerfile: docker/sim/Dockerfile
     container_name: sim-firewall
-    command: ["--source", "firewall", "--scenario", "mixed", "--format", "syslog-udp", "--target", "worm:514", "--rate", "2", "--count", "0"]
+    command: ["--source", "firewall", "--scenario", "mixed", "--format", "syslog-udp", "--target", "worm:1514", "--rate", "2", "--count", "0"]
     depends_on:
       - worm
     restart: unless-stopped
@@ -43,7 +42,7 @@ services:
       context: .
       dockerfile: docker/sim/Dockerfile
     container_name: sim-asa
-    command: ["--source", "asa", "--scenario", "mixed", "--format", "syslog-udp", "--target", "worm:514", "--rate", "2", "--count", "0"]
+    command: ["--source", "asa", "--scenario", "mixed", "--format", "syslog-udp", "--target", "worm:1514", "--rate", "2", "--count", "0"]
     depends_on:
       - worm
     restart: unless-stopped
@@ -56,7 +55,7 @@ services:
       context: .
       dockerfile: docker/sim/Dockerfile
     container_name: sim-sshd
-    command: ["--source", "sshd", "--scenario", "bruteforce", "--format", "syslog-tcp", "--target", "worm:514", "--rate", "1", "--count", "0"]
+    command: ["--source", "sshd", "--scenario", "bruteforce", "--format", "syslog-tcp", "--target", "worm:1514", "--rate", "1", "--count", "0"]
     depends_on:
       - worm
     restart: unless-stopped
@@ -69,7 +68,7 @@ services:
       context: .
       dockerfile: docker/sim/Dockerfile
     container_name: sim-ids
-    command: ["--source", "ids", "--scenario", "scan", "--format", "syslog-udp", "--target", "worm:514", "--rate", "1", "--count", "0"]
+    command: ["--source", "ids", "--scenario", "scan", "--format", "syslog-udp", "--target", "worm:1514", "--rate", "1", "--count", "0"]
     depends_on:
       - worm
     restart: unless-stopped
@@ -84,7 +83,7 @@ services:
     container_name: sim-webserver
     command: ["--source", "webserver", "--scenario", "mixed", "--format", "file", "--output-dir", "/data/inbox", "--rate", "2", "--count", "0"]
     volumes:
-      - ./data/inbox:/data/inbox
+      - worm-data:/data
     depends_on:
       - worm
     restart: unless-stopped
@@ -112,27 +111,20 @@ services:
     container_name: sim-database
     command: ["--source", "database", "--scenario", "mixed", "--format", "file", "--output-dir", "/data/inbox", "--rate", "1", "--count", "0"]
     volumes:
-      - ./data/inbox:/data/inbox
+      - worm-data:/data
     depends_on:
       - worm
     restart: unless-stopped
     networks:
       - worm-net
 
-  # 8. Web-based SQLite GUI Viewer
-  sqlite-web:
-    build:
-      context: .
-      dockerfile: docker/sqlite-web/Dockerfile
-    container_name: worm-sqlite-web
-    ports:
-      - "8085:8080/tcp"
-    volumes:
-      - ./data:/data:ro
-    restart: unless-stopped
-    networks:
-      - worm-net
 
 networks:
   worm-net:
     driver: bridge
+
+volumes:
+  worm-data:
+  worm-packs:
+  worm-sources:
+  worm-sinks:

@@ -624,11 +624,9 @@ func ListSourcesCLI(uiAddr, srcDir string) {
 	fmt.Printf("%-24s %-10s %-16s %-8s %s\n", "NAME", "VERSION", "TYPE", "ENABLED", "TARGET ENDPOINT / TOPIC")
 	fmt.Println(strings.Repeat("-", 80))
 	for _, c := range list {
-		target := "-"
-		if c.Spec.Endpoint != nil && c.Spec.Endpoint.URL != "" {
-			target = c.Spec.Endpoint.URL
-		} else if c.Spec.Topic != "" {
-			target = fmt.Sprintf("topic:%s brokers:%s", c.Spec.Topic, strings.Join(c.Spec.Brokers, ","))
+		target := c.Summary().Target
+		if target == "" {
+			target = "-"
 		}
 		if len(target) > 30 {
 			target = target[:27] + "..."
@@ -698,48 +696,84 @@ func TestSourceCLI(filePath string) {
 	fmt.Printf("\n[WORM] Source Connectivity Test PASSED for %q (%s)\n\n", src.Metadata.Name, src.Spec.Type)
 }
 
-func ApplySourceCLI(filePath, uiAddr, srcDir string) {
-	if srcDir == "" {
-		srcDir = "sources"
-	}
+func applyConnectionAPI(filePath, uiAddr string) (*connections.Connection, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
-		os.Exit(1)
+		return nil, err
 	}
-
-	_, err = connections.LoadSource(strings.NewReader(string(data)))
+	payload, _ := json.Marshal(map[string]string{"filename": filepath.Base(filePath), "yaml_content": string(data)})
+	req, err := http.NewRequest(http.MethodPost, GetBaseURL(uiAddr)+"/api/v1/connections/apply", bytes.NewReader(payload))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "SOURCE VALIDATION FAILED: %v\n", err)
-		os.Exit(1)
+		return nil, err
 	}
-
-	mgr := connections.NewManager(srcDir)
-	_ = mgr.LoadDir(srcDir)
-	applied, err := mgr.ApplyFile(filepath.Base(filePath), data)
+	req.Header.Set("Content-Type", "application/json")
+	if token := os.Getenv("WORM_ADMIN_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to apply source: %v\n", err)
+		return nil, fmt.Errorf("live control plane unavailable: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("apply failed: %s", strings.TrimSpace(string(body)))
+	}
+	var result struct {
+		Connection *connections.Connection `json:"connection"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	if result.Connection == nil {
+		return nil, fmt.Errorf("apply response omitted connection")
+	}
+	return result.Connection, nil
+}
+func rollbackConnectionAPI(uiAddr string) error {
+	req, err := http.NewRequest(http.MethodPost, GetBaseURL(uiAddr)+"/api/v1/connections/rollback", nil)
+	if err != nil {
+		return err
+	}
+	if token := os.Getenv("WORM_ADMIN_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("live control plane unavailable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("rollback failed: %s", strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func ApplySourceCLI(filePath, uiAddr, srcDir string) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("\n[WORM] Source Applied Successfully!\n")
-	fmt.Printf("  * Kind:    %s\n", applied.Kind)
-	fmt.Printf("  * Name:    %s\n", applied.Metadata.Name)
-	fmt.Printf("  * Version: %s\n", applied.Metadata.Version)
-	fmt.Printf("  * Type:    %s\n\n", applied.Spec.Type)
+	if _, err = connections.LoadSource(strings.NewReader(string(data))); err != nil {
+		fmt.Fprintln(os.Stderr, "SOURCE VALIDATION FAILED:", err)
+		os.Exit(1)
+	}
+	applied, err := applyConnectionAPI(filePath, uiAddr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\\n[WORM] Source Applied Live: %s@%s (%s)\\n\\n", applied.Metadata.Name, applied.Metadata.Version, applied.Spec.Type)
 }
 
 func RollbackSourceCLI(uiAddr, srcDir string) {
-	if srcDir == "" {
-		srcDir = "sources"
-	}
-	mgr := connections.NewManager(srcDir)
-	_ = mgr.LoadDir(srcDir)
-	if err := mgr.Rollback(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: source rollback failed: %v\n", err)
+	if err := rollbackConnectionAPI(uiAddr); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("\n[WORM] Source Rollback Successful!\n\n")
+	fmt.Println("\\n[WORM] Connection Rollback Applied Live!\\n")
 }
 
 // --- Sinks CLI (kind: Sink) ---
@@ -756,13 +790,9 @@ func ListSinksCLI(uiAddr, sinkDir string) {
 	fmt.Printf("%-24s %-10s %-16s %-8s %s\n", "NAME", "VERSION", "TYPE", "ENABLED", "TARGET ENDPOINT / PATH")
 	fmt.Println(strings.Repeat("-", 80))
 	for _, c := range list {
-		target := "-"
-		if c.Spec.Endpoint != nil && c.Spec.Endpoint.URL != "" {
-			target = c.Spec.Endpoint.URL
-		} else if c.Spec.Path != "" {
-			target = c.Spec.Path
-		} else if c.Spec.Topic != "" {
-			target = fmt.Sprintf("topic:%s brokers:%s", c.Spec.Topic, strings.Join(c.Spec.Brokers, ","))
+		target := c.Summary().Target
+		if target == "" {
+			target = "-"
 		}
 		if len(target) > 30 {
 			target = target[:27] + "..."
@@ -833,45 +863,27 @@ func TestSinkCLI(filePath string) {
 }
 
 func ApplySinkCLI(filePath, uiAddr, sinkDir string) {
-	if sinkDir == "" {
-		sinkDir = "sinks"
-	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to read file %s: %v\n", filePath, err)
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
-
-	_, err = connections.LoadSink(strings.NewReader(string(data)))
+	if _, err = connections.LoadSink(strings.NewReader(string(data))); err != nil {
+		fmt.Fprintln(os.Stderr, "SINK VALIDATION FAILED:", err)
+		os.Exit(1)
+	}
+	applied, err := applyConnectionAPI(filePath, uiAddr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "SINK VALIDATION FAILED: %v\n", err)
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
-
-	mgr := connections.NewManager(sinkDir)
-	_ = mgr.LoadDir(sinkDir)
-	applied, err := mgr.ApplyFile(filepath.Base(filePath), data)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to apply sink: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("\n[WORM] Sink Applied Successfully!\n")
-	fmt.Printf("  * Kind:    %s\n", applied.Kind)
-	fmt.Printf("  * Name:    %s\n", applied.Metadata.Name)
-	fmt.Printf("  * Version: %s\n", applied.Metadata.Version)
-	fmt.Printf("  * Type:    %s\n\n", applied.Spec.Type)
+	fmt.Printf("\\n[WORM] Sink Applied Live: %s@%s (%s)\\n\\n", applied.Metadata.Name, applied.Metadata.Version, applied.Spec.Type)
 }
 
 func RollbackSinkCLI(uiAddr, sinkDir string) {
-	if sinkDir == "" {
-		sinkDir = "sinks"
-	}
-	mgr := connections.NewManager(sinkDir)
-	_ = mgr.LoadDir(sinkDir)
-	if err := mgr.Rollback(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: sink rollback failed: %v\n", err)
+	if err := rollbackConnectionAPI(uiAddr); err != nil {
+		fmt.Fprintln(os.Stderr, "ERROR:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("\n[WORM] Sink Rollback Successful!\n\n")
+	fmt.Println("\\n[WORM] Connection Rollback Applied Live!\\n")
 }

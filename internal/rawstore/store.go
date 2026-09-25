@@ -59,7 +59,7 @@ func New(dbPath string) (*RawStore, error) {
 }
 
 // CurrentSchemaVersion tracks the active database schema migration version.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 4
 
 func initSchema(db *sql.DB) error {
 	var version int
@@ -137,6 +137,26 @@ func initSchema(db *sql.DB) error {
 		version = 2
 	}
 
+	if version < 3 {
+		_, _ = db.Exec("ALTER TABLE raw_events ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';")
+		version = 3
+	}
+
+	if version < 4 {
+		// A process can restart after a child was quarantined but before its parent
+		// raw status was finalized. Keep that recovery replay idempotent.
+		if _, err := db.Exec(`DELETE FROM quarantine WHERE rowid NOT IN (
+			SELECT MIN(rowid) FROM quarantine GROUP BY raw_id, record_ordinal, stage, reason
+		);`); err != nil {
+			return fmt.Errorf("failed to deduplicate quarantine rows: %w", err)
+		}
+		if _, err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_quarantine_child
+			ON quarantine(raw_id, record_ordinal, stage, reason);`); err != nil {
+			return fmt.Errorf("failed to create quarantine child index: %w", err)
+		}
+		version = 4
+	}
+
 	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d;", CurrentSchemaVersion)); err != nil {
 		return fmt.Errorf("failed to set user_version: %w", err)
 	}
@@ -169,22 +189,28 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 		Transport:  rec.Transport,
 		SourceIP:   rec.SourceIP,
 		SourcePort: rec.SourcePort,
+		Metadata:   rec.Metadata,
 		ReceivedAt: rec.ReceivedAt,
 		Payload:    rec.RawBytes,
 		Status:     model.StatusAccepted,
 	}
 
+	metadataJSON, err := json.Marshal(event.Metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode receive metadata: %w", err)
+	}
 	query := `
-	INSERT INTO raw_events (raw_id, raw_sha256, byte_count, transport, source_ip, source_port, received_at, payload, status)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+	INSERT INTO raw_events (raw_id, raw_sha256, byte_count, transport, source_ip, source_port, metadata_json, received_at, payload, status)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 	`
-	_, err := s.db.ExecContext(ctx, query,
+	_, err = s.db.ExecContext(ctx, query,
 		event.RawID,
 		event.RawSHA256,
 		event.ByteCount,
 		event.Transport,
 		event.SourceIP,
 		event.SourcePort,
+		string(metadataJSON),
 		event.ReceivedAt.Format(time.RFC3339Nano),
 		event.Payload,
 		string(event.Status),
@@ -199,13 +225,14 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 // Retrieve returns the raw record and exact bytes by raw ID.
 func (s *RawStore) Retrieve(ctx context.Context, rawID string) (*model.RawEvent, error) {
 	query := `
-	SELECT raw_id, raw_sha256, byte_count, transport, source_ip, source_port, received_at, payload, status
+	SELECT raw_id, raw_sha256, byte_count, transport, source_ip, source_port, metadata_json, received_at, payload, status
 	FROM raw_events WHERE raw_id = ?;
 	`
 	var (
-		evt        model.RawEvent
-		receivedAt string
-		statusStr  string
+		evt          model.RawEvent
+		receivedAt   string
+		statusStr    string
+		metadataJSON string
 	)
 
 	err := s.db.QueryRowContext(ctx, query, rawID).Scan(
@@ -215,6 +242,7 @@ func (s *RawStore) Retrieve(ctx context.Context, rawID string) (*model.RawEvent,
 		&evt.Transport,
 		&evt.SourceIP,
 		&evt.SourcePort,
+		&metadataJSON,
 		&receivedAt,
 		&evt.Payload,
 		&statusStr,
@@ -232,6 +260,9 @@ func (s *RawStore) Retrieve(ctx context.Context, rawID string) (*model.RawEvent,
 	}
 	evt.ReceivedAt = t
 	evt.Status = model.RawStatus(statusStr)
+	if err := json.Unmarshal([]byte(metadataJSON), &evt.Metadata); err != nil {
+		return nil, fmt.Errorf("invalid receive metadata for %s: %w", rawID, err)
+	}
 
 	return &evt, nil
 }
@@ -279,7 +310,12 @@ func (s *RawStore) Quarantine(ctx context.Context, entry model.QuarantineEntry) 
 	candidateStr := strings.Join(entry.CandidatePacks, ",")
 	qQuery := `
 	INSERT INTO quarantine (quarantine_id, raw_id, record_ordinal, raw_sha256, stage, reason, error_details, raw_preview, candidate_packs, replay_eligible, quarantined_at)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	ON CONFLICT(raw_id, record_ordinal, stage, reason) DO UPDATE SET
+		error_details=excluded.error_details,
+		raw_preview=excluded.raw_preview,
+		candidate_packs=excluded.candidate_packs,
+		replay_eligible=excluded.replay_eligible;
 	`
 	_, err = tx.ExecContext(ctx, qQuery,
 		entry.QuarantineID,
@@ -507,77 +543,106 @@ func (s *RawStore) CountQuarantine(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+func (s *RawStore) CountUnmapped(ctx context.Context) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM normalized_events WHERE EXISTS (SELECT 1 FROM json_each(json_extract(event_json,'$.ocsf.unmapped')))`).Scan(&n)
+	return n, err
+}
+
 // StoreNormalized inserts or updates a normalized event in the SQLite database.
 func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedEvent) error {
+	return s.StoreNormalizedWithOutbox(ctx, event, nil)
+}
+
+// StoreNormalizedWithOutbox atomically stores the projection and one idempotent delivery row per destination.
+func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.NormalizedEvent, destinations []string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-
 	data, err := json.Marshal(event)
 	if err != nil {
-		return fmt.Errorf("failed to marshal normalized event: %w", err)
+		return fmt.Errorf("marshal normalized event: %w", err)
 	}
-
-	var eventTime int64
-	if tVal, ok := event.OCSF["time"].(int64); ok {
-		eventTime = tVal
-	} else if tValFloat, ok := event.OCSF["time"].(float64); ok {
-		eventTime = int64(tValFloat)
-	} else {
-		eventTime = event.Worm.ReceivedTime.UnixMilli()
+	eventTime := event.Worm.ReceivedTime.UnixMilli()
+	switch v := event.OCSF["time"].(type) {
+	case int64:
+		eventTime = v
+	case float64:
+		eventTime = int64(v)
+	case int:
+		eventTime = int64(v)
 	}
-
-	var severityStr string
-	if sVal, ok := event.OCSF["severity_id"]; ok && sVal != nil {
-		severityStr = fmt.Sprintf("%v", sVal)
+	severity, activity, msg := "", "", ""
+	if v, ok := event.OCSF["severity_id"]; ok && v != nil {
+		severity = fmt.Sprint(v)
 	}
-
-	var activityName string
-	if aVal, ok := event.OCSF["activity_name"].(string); ok {
-		activityName = aVal
+	if v, ok := event.OCSF["activity_name"].(string); ok {
+		activity = v
 	}
-
-	var msg string
-	if mVal, ok := event.OCSF["message"].(string); ok {
-		msg = mVal
+	if v, ok := event.OCSF["message"].(string); ok {
+		msg = v
 	}
-
-	// Check if a normalized projection already exists for this raw_id and record_ordinal to prevent duplicates on repeated replay
-	var existingEventID string
-	err = s.db.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id = ? AND record_ordinal = ? LIMIT 1;", event.Worm.RawID, event.Worm.RecordOrdinal).Scan(&existingEventID)
-	if err == nil && existingEventID != "" {
-		event.Worm.EventID = existingEventID
-		if updatedData, marshalErr := json.Marshal(event); marshalErr == nil {
-			data = updatedData
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var existing string
+	if err = tx.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id=? AND record_ordinal=? LIMIT 1", event.Worm.RawID, event.Worm.RecordOrdinal).Scan(&existing); err == nil && existing != "" {
+		event.Worm.EventID = existing
+		data, _ = json.Marshal(event)
+	}
+	sum := sha256.Sum256(data)
+	_, err = tx.ExecContext(ctx, `INSERT INTO normalized_events(event_id,raw_id,record_ordinal,source_category,source_id,severity_id,activity_name,message,event_time,received_time,event_json,event_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET event_json=excluded.event_json,event_sha256=excluded.event_sha256,message=excluded.message`, event.Worm.EventID, event.Worm.RawID, event.Worm.RecordOrdinal, event.Worm.SourceCategory, event.Worm.SourceID, severity, activity, msg, eventTime, event.Worm.ReceivedTime.Format(time.RFC3339Nano), string(data), hex.EncodeToString(sum[:]))
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, dest := range destinations {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO outbox(event_id,destination,payload,attempts,next_retry_at,status,created_at) VALUES(?,?,?,0,?,'pending',?) ON CONFLICT(event_id,destination) DO UPDATE SET payload=excluded.payload WHERE outbox.status!='delivered'`, event.Worm.EventID, dest, data, now, now); err != nil {
+			return err
 		}
 	}
+	return tx.Commit()
+}
 
-	eventHash := sha256.Sum256(data)
-	eventSHA256 := hex.EncodeToString(eventHash[:])
-
-	query := `
-	INSERT INTO normalized_events (
-		event_id, raw_id, record_ordinal, source_category, source_id, severity_id, activity_name, message, event_time, received_time, event_json, event_sha256
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	ON CONFLICT(event_id) DO UPDATE SET
-		event_json = excluded.event_json,
-		event_sha256 = excluded.event_sha256,
-		message = excluded.message;
-	`
-	_, err = s.db.ExecContext(ctx, query,
-		event.Worm.EventID,
-		event.Worm.RawID,
-		event.Worm.RecordOrdinal,
-		event.Worm.SourceCategory,
-		event.Worm.SourceID,
-		severityStr,
-		activityName,
-		msg,
-		eventTime,
-		event.Worm.ReceivedTime.Format(time.RFC3339Nano),
-		string(data),
-		eventSHA256,
-	)
-	return err
+func (s *RawStore) DB() *sql.DB { return s.db }
+func (s *RawStore) CountRawStatus(ctx context.Context, status model.RawStatus) (int64, error) {
+	var n int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM raw_events WHERE status=?", string(status)).Scan(&n)
+	return n, err
+}
+func (s *RawStore) ListRawByStatus(ctx context.Context, status model.RawStatus) ([]*model.RawEvent, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT raw_id FROM raw_events WHERE status=? ORDER BY received_at", string(status))
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	// RawStore intentionally uses one SQLite connection. Close the ID cursor
+	// before Retrieve opens another query or restart recovery will deadlock.
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	out := make([]*model.RawEvent, 0, len(ids))
+	for _, id := range ids {
+		e, err := s.Retrieve(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, nil
 }
 
 // ListNormalized retrieves paginated normalized events with optional category and severity filtering.

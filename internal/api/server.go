@@ -271,8 +271,15 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&m)
 
 	unmappedRatio := 0.0
-	if stats.Normalized > 0 {
-		unmappedRatio = 0.02
+	bufferFill := 0.0
+	if s.pipe != nil {
+		if stats.Normalized > 0 {
+			unmappedRatio = float64(s.pipe.UnmappedCount(r.Context())) / float64(stats.Normalized)
+		}
+		depth, capacity := s.pipe.BufferUsage()
+		if capacity > 0 {
+			bufferFill = 100 * float64(depth) / float64(capacity)
+		}
 	}
 
 	s.jsonResponse(w, http.StatusOK, map[string]any{
@@ -286,11 +293,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			"valid":  valid,
 			"reason": reason,
 		},
-		"buffer_fill_pct": 0.0,
-		"unmapped_ratio":  unmappedRatio,
-		"memory_bytes":    m.Alloc,
-		"goroutines":      runtime.NumGoroutine(),
-		"uptime_seconds":  time.Since(s.startTime).Seconds(),
+		"buffer_fill_pct":  bufferFill,
+		"unmapped_ratio":   unmappedRatio,
+		"delivery_pending": stats.DeliveryPending,
+		"delivery_failed":  stats.DeliveryFailed,
+		"memory_bytes":     m.Alloc,
+		"goroutines":       runtime.NumGoroutine(),
+		"uptime_seconds":   time.Since(s.startTime).Seconds(),
 	})
 }
 
@@ -916,22 +925,12 @@ func (s *Server) handleTestConnection(w http.ResponseWriter, r *http.Request) {
 	if target == "" {
 		target = conn.Metadata.Name
 	}
-	if err := conn.TestConnectivity(r.Context()); err != nil {
-		s.jsonResponse(w, http.StatusOK, map[string]any{
-			"status":  "failed",
-			"success": false,
-			"target":  target,
-			"error":   err.Error(),
-			"message": err.Error(),
-		})
+	result, err := conn.TestConnectivityDetailed(r.Context())
+	if err != nil {
+		s.jsonResponse(w, http.StatusOK, map[string]any{"status": "failed", "success": false, "target": target, "level": "syntax_only", "error": err.Error(), "message": err.Error()})
 		return
 	}
-	s.jsonResponse(w, http.StatusOK, map[string]any{
-		"status":  "ok",
-		"success": true,
-		"target":  target,
-		"message": "TCP connectivity verified to endpoint",
-	})
+	s.jsonResponse(w, http.StatusOK, map[string]any{"status": "ok", "success": true, "target": target, "level": result.Level, "message": result.Message})
 }
 
 func (s *Server) handleApplyConnection(w http.ResponseWriter, r *http.Request) {

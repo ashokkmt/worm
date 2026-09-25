@@ -1,0 +1,13 @@
+apiVersion: worm.io/v1
+kind: Source
+metadata:
+  name: perimeter-syslog-tls
+  version: 1.0.0
+  description: RFC 5425 TLS listener for perimeter devices
+spec:
+  type: syslog_tls
+  enabled: false
+  listen: :7514
+  tlsCertFile: certs/server.crt
+  tlsKeyFile: certs/server.key
+  clientCAFile: certs/client-ca.crt

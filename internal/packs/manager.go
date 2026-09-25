@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"worm/internal/decode"
 )
 
 // SnapshotManager coordinates the safe, thread-safe atomic activation and rollback
@@ -193,4 +195,46 @@ func LoadDir(dir string) (*Snapshot, error) {
 
 	version := fmt.Sprintf("snap-%d", time.Now().UnixNano())
 	return NewSnapshot(version, loadedPacks)
+}
+
+func validateFixtures(root string, pack *ParserPack) error {
+	reg := decode.DefaultRegistry()
+	for _, decl := range pack.Spec.Fixtures {
+		negative := strings.HasPrefix(decl, "!")
+		name := strings.TrimPrefix(decl, "!")
+		path := name
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", name, err)
+		}
+		_, records, err := reg.DetectAndDecode(raw)
+		matched := false
+		if err == nil {
+			for _, rec := range records {
+				if pack.Matches(rec) {
+					matched = true
+					if _, _, _, e := ExtractAndConvert(pack, rec); e != nil {
+						err = e
+					}
+					break
+				}
+			}
+		}
+		if negative {
+			if err == nil && matched {
+				return fmt.Errorf("negative fixture %s unexpectedly matched", name)
+			}
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("positive fixture %s failed: %w", name, err)
+		}
+		if !matched {
+			return fmt.Errorf("positive fixture %s did not match", name)
+		}
+	}
+	return nil
 }

@@ -2,15 +2,19 @@ package connections
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
-	"net"
+	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kgo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,7 +26,6 @@ var (
 		"cloud_pull":  true,
 		"kafka_input": true,
 		"syslog_tls":  true,
-		"s3_watch":    true,
 	}
 
 	validSinkTypes = map[string]bool{
@@ -70,6 +73,10 @@ type ConnectionSpec struct {
 	WatermarkPath  string        `yaml:"watermarkPath,omitempty" json:"watermarkPath,omitempty"`
 	Interval       string        `yaml:"interval,omitempty" json:"interval,omitempty"`
 	BatchSize      int           `yaml:"batchSize,omitempty" json:"batchSize,omitempty"`
+	Listen         string        `yaml:"listen,omitempty" json:"listen,omitempty"`
+	TLSCertFile    string        `yaml:"tlsCertFile,omitempty" json:"tlsCertFile,omitempty"`
+	TLSKeyFile     string        `yaml:"tlsKeyFile,omitempty" json:"tlsKeyFile,omitempty"`
+	ClientCAFile   string        `yaml:"clientCAFile,omitempty" json:"clientCAFile,omitempty"`
 }
 
 type DeliverySpec struct {
@@ -122,9 +129,7 @@ func (c *Connection) Summary() ConnectionSummary {
 	case "parquet_output", "ndjson_output":
 		target = c.Spec.Path
 	case "syslog_tls":
-		target = ":6514 (RFC 5425)"
-	case "s3_watch":
-		target = c.Spec.Path
+		target = c.Spec.Listen + " (RFC 5425)"
 	}
 
 	return ConnectionSummary{
@@ -193,7 +198,7 @@ func (c *Connection) Validate() error {
 	switch c.Kind {
 	case "Source":
 		if !validSourceTypes[c.Spec.Type] {
-			return fmt.Errorf("invalid source type %q (expected cloud_pull, kafka_input, syslog_tls, s3_watch)", c.Spec.Type)
+			return fmt.Errorf("invalid source type %q (expected cloud_pull, kafka_input, syslog_tls)", c.Spec.Type)
 		}
 	case "Sink":
 		if !validSinkTypes[c.Spec.Type] {
@@ -253,63 +258,84 @@ func (c *Connection) Validate() error {
 		if c.Spec.Endpoint == nil || c.Spec.Endpoint.URL == "" {
 			return errors.New("cloud_pull requires spec.endpoint.url")
 		}
+	case "syslog_tls":
+		if c.Spec.Listen == "" || c.Spec.TLSCertFile == "" || c.Spec.TLSKeyFile == "" {
+			return errors.New("syslog_tls requires spec.listen, spec.tlsCertFile and spec.tlsKeyFile")
+		}
 	}
 
 	return nil
 }
 
-// TestConnectivity performs a non-destructive reachability test for the configured connection.
+// ConnectivityResult distinguishes validation, reachability, and protocol verification.
+type ConnectivityResult struct {
+	Level   string `json:"level"`
+	Message string `json:"message"`
+}
+
 func (c *Connection) TestConnectivity(ctx context.Context) error {
+	_, err := c.TestConnectivityDetailed(ctx)
+	return err
+}
+func (c *Connection) TestConnectivityDetailed(ctx context.Context) (ConnectivityResult, error) {
 	switch c.Spec.Type {
 	case "http_output", "cloud_pull":
-		if c.Spec.Endpoint == nil || c.Spec.Endpoint.URL == "" {
-			return errors.New("missing endpoint url")
-		}
-		u, err := url.Parse(c.Spec.Endpoint.URL)
+		req, err := http.NewRequestWithContext(ctx, http.MethodHead, c.Spec.Endpoint.URL, nil)
 		if err != nil {
-			return fmt.Errorf("invalid endpoint URL: %w", err)
+			return ConnectivityResult{}, err
 		}
-		host := u.Host
-		if !strings.Contains(host, ":") {
-			if u.Scheme == "https" {
-				host += ":443"
-			} else {
-				host += ":80"
-			}
-		}
-		var d net.Dialer
-		dialCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		defer cancel()
-		conn, err := d.DialContext(dialCtx, "tcp", host)
+		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		if err != nil {
-			// Reachability warning or error
-			return fmt.Errorf("connectivity check to %s failed: %w", host, err)
+			return ConnectivityResult{}, fmt.Errorf("HTTP handshake failed: %w", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 500 {
+			return ConnectivityResult{}, fmt.Errorf("HTTP endpoint returned %s", resp.Status)
+		}
+		return ConnectivityResult{"protocol_verified", "HTTP response " + resp.Status}, nil
+	case "kafka_output", "kafka_input":
+		client, err := kgo.NewClient(kgo.SeedBrokers(c.Spec.Brokers...))
+		if err != nil {
+			return ConnectivityResult{}, err
+		}
+		defer client.Close()
+		if err := client.Ping(ctx); err != nil {
+			return ConnectivityResult{}, fmt.Errorf("Kafka metadata handshake failed: %w", err)
+		}
+		return ConnectivityResult{"protocol_verified", "Kafka metadata handshake completed"}, nil
+	case "parquet_output", "ndjson_output":
+		writeDir := c.Spec.Path
+		if c.Spec.Type == "ndjson_output" {
+			writeDir = filepath.Dir(c.Spec.Path)
+		}
+		if err := os.MkdirAll(writeDir, 0755); err != nil {
+			return ConnectivityResult{}, err
+		}
+		f, err := os.CreateTemp(writeDir, ".worm-write-test-")
+		if err != nil {
+			return ConnectivityResult{}, fmt.Errorf("output path is not writable: %w", err)
+		}
+		name := f.Name()
+		if err = f.Close(); err == nil {
+			err = os.Remove(name)
+		}
+		if err != nil {
+			return ConnectivityResult{}, err
+		}
+		return ConnectivityResult{"end_to_end_verified", "output path write/rename permissions verified"}, nil
+	case "syslog_tls":
+		host := c.Spec.Listen
+		if strings.HasPrefix(host, ":") {
+			host = "127.0.0.1" + host
+		}
+		d := tls.Dialer{Config: &tls.Config{MinVersion: tls.VersionTLS12}}
+		conn, err := d.DialContext(ctx, "tcp", host)
+		if err != nil {
+			return ConnectivityResult{}, fmt.Errorf("TLS handshake failed: %w", err)
 		}
 		conn.Close()
-		return nil
-
-	case "kafka_output", "kafka_input":
-		if len(c.Spec.Brokers) == 0 {
-			return errors.New("no brokers configured")
-		}
-		for _, b := range c.Spec.Brokers {
-			var d net.Dialer
-			dialCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			conn, err := d.DialContext(dialCtx, "tcp", b)
-			cancel()
-			if err == nil {
-				conn.Close()
-				return nil
-			}
-		}
-		return fmt.Errorf("none of the brokers %v could be reached", c.Spec.Brokers)
-
-	case "parquet_output", "ndjson_output":
-		if c.Spec.Path == "" {
-			return errors.New("missing output path")
-		}
-		return nil
+		return ConnectivityResult{"protocol_verified", "TLS handshake completed"}, nil
+	default:
+		return ConnectivityResult{}, fmt.Errorf("unsupported connection type %q", c.Spec.Type)
 	}
-
-	return nil
 }

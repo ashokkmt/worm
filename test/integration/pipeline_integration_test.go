@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -315,5 +316,111 @@ func TestIntegration_SinkFailureAndOctetFraming_BA027(t *testing.T) {
 	}
 	if !quarList[0].ReplayEligible {
 		t.Errorf("expected ReplayEligible to be true for sink error")
+	}
+}
+
+type switchSink struct {
+	mu        sync.Mutex
+	fail      bool
+	delivered int
+}
+
+func (s *switchSink) Emit(context.Context, *model.NormalizedEvent) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.fail {
+		return fmt.Errorf("simulated outage")
+	}
+	s.delivered++
+	return nil
+}
+func (*switchSink) Flush() error { return nil }
+func (*switchSink) Close() error { return nil }
+func TestDurableOutboxRestartAndDrain(t *testing.T) {
+	dir := t.TempDir()
+	db := filepath.Join(dir, "restart.db")
+	store, err := rawstore.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failing := &switchSink{fail: true}
+	dyn := output.NewDynamicSink()
+	if err := dyn.Replace(map[string]output.OutputSink{"siem": failing}); err != nil {
+		t.Fatal(err)
+	}
+	p := pipeline.New(pipeline.Config{Workers: 1, BufferSize: 10}, store, dyn)
+	p.Start()
+	if err := p.SubmitSync(context.Background(), model.IngestedRecord{Transport: "test", SourceIP: "local", RawBytes: []byte(`{"event":"x"}`), ReceivedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	st := p.Stats()
+	if st.Normalized != 1 || st.DeliveryPending != 1 {
+		q, _ := store.GetQuarantined(context.Background(), 10, 0)
+		t.Fatalf("before restart: %+v quarantine=%+v destinations=%v", st, q, dyn.Names())
+	}
+	p.Stop()
+	_ = store.Close()
+	store, err = rawstore.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	healthy := &switchSink{}
+	dyn = output.NewDynamicSink()
+	_ = dyn.Replace(map[string]output.OutputSink{"siem": healthy})
+	p = pipeline.New(pipeline.Config{Workers: 1, BufferSize: 10}, store, dyn)
+	p.Start()
+	defer p.Stop()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		st = p.Stats()
+		if st.DeliveryPending == 0 && st.Delivered == 1 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	st = p.Stats()
+	if st.DeliveryPending != 0 || st.Delivered != 1 {
+		t.Fatalf("after restart: %+v", st)
+	}
+}
+
+func TestAcceptedRawIsRecoveredAfterRestart(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "accepted-restart.db")
+	store, err := rawstore.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := store.Store(context.Background(), model.IngestedRecord{Transport: "http-post", SourceIP: "127.0.0.1", RawBytes: []byte(`{"event":"committed-before-crash"}`), ReceivedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = rawstore.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	sink := pipeline.NewMemorySink()
+	p := pipeline.New(pipeline.Config{Workers: 1, BufferSize: 4}, store, sink)
+	p.Start()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if st := p.Stats(); st.Normalized == 1 && st.Pending == 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	p.Stop()
+	st := p.Stats()
+	if st.Normalized != 1 || st.Pending != 0 || len(sink.Events()) != 1 {
+		t.Fatalf("accepted raw was not recovered: raw=%s stats=%+v emitted=%d", raw.RawID, st, len(sink.Events()))
+	}
+	recovered, err := store.Retrieve(context.Background(), raw.RawID)
+	if err != nil || recovered.Status != model.StatusNormalized {
+		t.Fatalf("unexpected recovered parent: %+v err=%v", recovered, err)
 	}
 }

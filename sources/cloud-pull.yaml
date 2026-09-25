@@ -6,7 +6,7 @@ metadata:
   description: REST pull poller for AWS CloudTrail audit logs
 spec:
   type: cloud_pull
-  enabled: true
+  enabled: false
   endpoint:
     url: https://audit.us-east-1.cloud/logs
     timeout: 10s

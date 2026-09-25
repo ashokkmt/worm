@@ -59,6 +59,10 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		return nil, fmt.Errorf("empty JSON payload")
 	}
 
+	if err := validateJSONDepth(trimmed); err != nil {
+		return nil, err
+	}
+
 	// 1. JSON Array Handling: [...]
 	if trimmed[0] == '[' {
 		var rawArray []json.RawMessage
@@ -155,4 +159,38 @@ func (j *JSONDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	}
 
 	return nil, fmt.Errorf("malformed JSON object: %w", json.Unmarshal(trimmed, &singleFields))
+}
+
+func validateJSONDepth(raw []byte) error {
+	depth := 0
+	inString := false
+	escaped := false
+	for _, b := range raw {
+		if inString {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if b == '\\' {
+				escaped = true
+			} else if b == '"' {
+				inString = false
+			}
+			continue
+		}
+		if b == '"' {
+			inString = true
+			continue
+		}
+		if b == '{' || b == '[' {
+			depth++
+			if depth > MaxDepth {
+				return fmt.Errorf("JSON nesting exceeds maximum depth %d", MaxDepth)
+			}
+		}
+		if b == '}' || b == ']' {
+			depth--
+		}
+	}
+	return nil
 }

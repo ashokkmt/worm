@@ -10,6 +10,8 @@ export interface SystemStats {
   quarantined: number;
   pending: number;
   delivered: number;
+  delivery_pending: number;
+  delivery_failed: number;
   loss_audit: LossAudit;
   buffer_fill_pct: number;
   unmapped_ratio: number;

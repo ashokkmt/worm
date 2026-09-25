@@ -22,6 +22,8 @@ type Manager struct {
 	connections   map[string]*Connection
 	filePaths     map[string]string
 	previousState map[string]*Connection
+	previousPaths map[string]string
+	onChange      func([]*Connection) error
 	backupFile    string
 	backupContent []byte
 	addedFile     string
@@ -34,6 +36,21 @@ func NewManager(dir string) *Manager {
 		connections: make(map[string]*Connection),
 		filePaths:   make(map[string]string),
 	}
+}
+
+// SetReconciler installs the atomic live-runtime callback used by apply and rollback.
+func (m *Manager) SetReconciler(fn func([]*Connection) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onChange = fn
+}
+func (m *Manager) listLocked() []*Connection {
+	out := make([]*Connection, 0, len(m.connections))
+	for _, c := range m.connections {
+		out = append(out, c)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Metadata.Name < out[j].Metadata.Name })
+	return out
 }
 
 // SetResourceDirs configures the dedicated directories for kind: Source and kind: Sink manifests.
@@ -90,6 +107,9 @@ func (m *Manager) LoadDir(dir string) error {
 		conn, err := LoadConnection(strings.NewReader(string(data)))
 		if err != nil {
 			return fmt.Errorf("failed to load %s: %w", filePath, err)
+		}
+		if prior, exists := m.filePaths[conn.Metadata.Name]; exists && prior != filePath {
+			return fmt.Errorf("duplicate connection identity %s/%s in %s and %s", conn.Kind, conn.Metadata.Name, prior, filePath)
 		}
 		m.connections[conn.Metadata.Name] = conn
 		m.filePaths[conn.Metadata.Name] = filePath
@@ -190,12 +210,19 @@ func (m *Manager) ApplyFile(filename string, content []byte) (*Connection, error
 	}
 	fn := filepath.Base(filename)
 	targetPath := filepath.Join(cleanBase, fn)
+	if priorPath, exists := m.filePaths[candidate.Metadata.Name]; exists && priorPath != targetPath {
+		return nil, fmt.Errorf("duplicate connection identity %s/%s in %s and %s", candidate.Kind, candidate.Metadata.Name, priorPath, targetPath)
+	}
 
 	var existingContent []byte
+	var replacedName string
 	isNew := true
 	if data, err := os.ReadFile(targetPath); err == nil {
 		existingContent = data
 		isNew = false
+		if existing, loadErr := LoadConnection(strings.NewReader(string(data))); loadErr == nil {
+			replacedName = existing.Metadata.Name
+		}
 	}
 
 	// 2. Stage temporary file
@@ -215,8 +242,12 @@ func (m *Manager) ApplyFile(filename string, content []byte) (*Connection, error
 
 	// Save rollback state
 	m.previousState = make(map[string]*Connection, len(m.connections))
+	m.previousPaths = make(map[string]string, len(m.filePaths))
 	for k, v := range m.connections {
 		m.previousState[k] = v
+	}
+	for k, v := range m.filePaths {
+		m.previousPaths[k] = v
 	}
 
 	if isNew {
@@ -229,11 +260,32 @@ func (m *Manager) ApplyFile(filename string, content []byte) (*Connection, error
 		m.backupContent = existingContent
 	}
 
+	if replacedName != "" && replacedName != candidate.Metadata.Name {
+		delete(m.connections, replacedName)
+		delete(m.filePaths, replacedName)
+	}
 	m.connections[candidate.Metadata.Name] = candidate
 	if m.filePaths == nil {
 		m.filePaths = make(map[string]string)
 	}
 	m.filePaths[candidate.Metadata.Name] = targetPath
+	if m.onChange != nil {
+		if err := m.onChange(m.listLocked()); err != nil {
+			if isNew {
+				_ = os.Remove(targetPath)
+			} else {
+				_ = os.WriteFile(targetPath, existingContent, 0644)
+			}
+			m.connections = m.previousState
+			m.filePaths = m.previousPaths
+			m.previousState = nil
+			m.previousPaths = nil
+			if rollbackErr := m.onChange(m.listLocked()); rollbackErr != nil {
+				return nil, fmt.Errorf("runtime reconcile failed (%v) and runtime rollback failed: %w", err, rollbackErr)
+			}
+			return nil, fmt.Errorf("runtime reconcile failed; apply rolled back: %w", err)
+		}
+	}
 	return candidate, nil
 }
 
@@ -258,6 +310,11 @@ func (m *Manager) Rollback() error {
 	}
 
 	m.connections = m.previousState
+	m.filePaths = m.previousPaths
 	m.previousState = nil
+	m.previousPaths = nil
+	if m.onChange != nil {
+		return m.onChange(m.listLocked())
+	}
 	return nil
 }

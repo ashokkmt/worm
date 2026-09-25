@@ -52,14 +52,10 @@ func (l *SyslogTLSListener) Addr() net.Addr {
 }
 
 func (l *SyslogTLSListener) Start(ctx context.Context, out chan<- model.IngestedRecord) error {
-	var ln net.Listener
-	var err error
-
-	if l.tlsConfig != nil {
-		ln, err = tls.Listen("tcp", l.addr, l.tlsConfig)
-	} else {
-		ln, err = net.Listen("tcp", l.addr)
+	if l.tlsConfig == nil || len(l.tlsConfig.Certificates) == 0 {
+		return fmt.Errorf("syslog TLS on %s requires a certificate and private key; plaintext downgrade is forbidden", l.addr)
 	}
+	ln, err := tls.Listen("tcp", l.addr, l.tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to listen Syslog TLS on %s: %w", l.addr, err)
 	}
@@ -155,8 +151,8 @@ func (l *SyslogTLSListener) handleConn(ctx context.Context, conn net.Conn, out c
 						Transport:  "syslog_tls",
 						SourceIP:   remoteHost,
 						SourcePort: remotePort,
-						ReceivedAt: time.Now().UTC(),
-						Ack:        ackChan,
+						ReceivedAt: time.Now().UTC(), Metadata: model.ReceiveMetadata{Listener: l.addr},
+						Ack: ackChan,
 					}
 					select {
 					case out <- record:
@@ -184,8 +180,8 @@ func (l *SyslogTLSListener) handleConn(ctx context.Context, conn net.Conn, out c
 					Transport:  "syslog_tls",
 					SourceIP:   remoteHost,
 					SourcePort: remotePort,
-					ReceivedAt: time.Now().UTC(),
-					Ack:        ackChan,
+					ReceivedAt: time.Now().UTC(), Metadata: model.ReceiveMetadata{Listener: l.addr},
+					Ack: ackChan,
 				}
 				select {
 				case out <- record:

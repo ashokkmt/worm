@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"worm/internal/model"
+	"worm/internal/ocsf"
 
 	"gopkg.in/yaml.v3"
 )
@@ -184,6 +185,9 @@ func (p *ParserPack) Validate() error {
 	for src, dst := range p.Spec.Map {
 		if !strings.HasPrefix(dst, "event.") {
 			return fmt.Errorf("spec.map target %q must start with 'event.'", dst)
+		}
+		if !ocsf.TargetAllowed(strings.TrimPrefix(dst, "event.")) {
+			return fmt.Errorf("spec.map target %q is not governed by pinned OCSF %s", dst, ocsf.Version)
 		}
 		if _, ok := p.Spec.Fields[src]; !ok {
 			return fmt.Errorf("spec.map source %q is not defined in spec.fields", src)

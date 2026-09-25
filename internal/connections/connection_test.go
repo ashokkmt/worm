@@ -131,8 +131,90 @@ spec:
 	}
 }
 
+func TestConnectionManager_ReconcilesApplyRollbackAndFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	mgr := NewManager(tempDir)
+	var snapshots [][]string
+	mgr.SetReconciler(func(conns []*Connection) error {
+		names := make([]string, len(conns))
+		for i, c := range conns {
+			names[i] = c.Metadata.Name
+		}
+		snapshots = append(snapshots, names)
+		if len(names) == 1 && names[0] == "reject-me" {
+			return context.Canceled
+		}
+		return nil
+	})
+
+	manifest := func(name string) []byte {
+		return []byte("apiVersion: worm.io/v1\nkind: Sink\nmetadata:\n  name: " + name + "\n  version: 1.0.0\nspec:\n  type: ndjson_output\n  enabled: true\n  path: " + filepath.Join(tempDir, name+".ndjson") + "\n")
+	}
+	if _, err := mgr.ApplyFile("live.yaml", manifest("live")); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(snapshots) != 1 || len(snapshots[0]) != 1 || snapshots[0][0] != "live" {
+		t.Fatalf("apply did not reconcile live snapshot: %#v", snapshots)
+	}
+	if err := mgr.Rollback(); err != nil {
+		t.Fatalf("rollback: %v", err)
+	}
+	if len(snapshots) != 2 || len(snapshots[1]) != 0 {
+		t.Fatalf("rollback did not reconcile empty snapshot: %#v", snapshots)
+	}
+	if _, err := mgr.ApplyFile("rejected.yaml", manifest("reject-me")); err == nil {
+		t.Fatal("expected failed live reconciliation")
+	}
+	if len(mgr.List()) != 0 {
+		t.Fatal("failed reconciliation changed manager state")
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "rejected.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("failed reconciliation left staged manifest: %v", err)
+	}
+}
+
+func TestConnectionManager_RejectsDuplicateIdentity(t *testing.T) {
+	dir := t.TempDir()
+	body := func(kind string) []byte {
+		return []byte("apiVersion: worm.io/v1\nkind: " + kind + "\nmetadata:\n  name: duplicate\n  version: 1.0.0\nspec:\n  type: ndjson_output\n  enabled: true\n  path: out.ndjson\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "one.yaml"), body("Sink"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "two.yaml"), body("Sink"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewManager(dir).LoadDir(dir); err == nil || !strings.Contains(err.Error(), "duplicate connection identity") {
+		t.Fatalf("expected duplicate identity error, got %v", err)
+	}
+}
+
+func TestConnectionManager_ApplyRejectsDuplicateIdentityAndCanRenameFile(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+	manifest := func(name string) []byte {
+		return []byte("apiVersion: worm.io/v1\nkind: Sink\nmetadata:\n  name: " + name + "\n  version: 1.0.0\nspec:\n  type: ndjson_output\n  enabled: true\n  path: " + filepath.Join(dir, name+".ndjson") + "\n")
+	}
+	if _, err := mgr.ApplyFile("one.yaml", manifest("one")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.ApplyFile("two.yaml", manifest("one")); err == nil {
+		t.Fatal("expected duplicate name in a different file to fail")
+	}
+	if _, err := mgr.ApplyFile("one.yaml", manifest("renamed")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.Get("one"); err == nil {
+		t.Fatal("old identity remained after same-file rename")
+	}
+	if _, err := mgr.Get("renamed"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConnection_TestConnectivity(t *testing.T) {
 	ctx := context.Background()
+	dir := t.TempDir()
 
 	// Parquet local path connectivity check
 	conn := &Connection{
@@ -142,11 +224,20 @@ func TestConnection_TestConnectivity(t *testing.T) {
 		Spec: ConnectionSpec{
 			Type:    "parquet_output",
 			Enabled: true,
-			Path:    "/tmp/test-lake",
+			Path:    filepath.Join(dir, "lake"),
 		},
 	}
 	if err := conn.TestConnectivity(ctx); err != nil {
 		t.Errorf("parquet connectivity test failed: %v", err)
+	}
+	ndjsonPath := filepath.Join(dir, "events.ndjson")
+	conn.Spec.Type = "ndjson_output"
+	conn.Spec.Path = ndjsonPath
+	if err := conn.TestConnectivity(ctx); err != nil {
+		t.Errorf("ndjson connectivity test failed: %v", err)
+	}
+	if info, err := os.Stat(ndjsonPath); err == nil && info.IsDir() {
+		t.Fatal("NDJSON connectivity check created the output file path as a directory")
 	}
 }
 

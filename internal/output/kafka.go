@@ -2,11 +2,15 @@ package output
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 	"worm/internal/model"
+
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/plain"
 )
 
 // KafkaOutputConfig configures delivery of normalized events to an Apache Kafka topic.
@@ -20,6 +24,9 @@ type KafkaOutputConfig struct {
 	Compression string        `json:"compression"` // "none", "gzip", "snappy", "zstd"
 	BatchBytes  int           `json:"batch_bytes"`
 	Linger      time.Duration `json:"linger"`
+	Username    string        `json:"-"`
+	Password    string        `json:"-"`
+	TLSConfig   *tls.Config   `json:"-"`
 }
 
 // KafkaMessage represents a record produced to Kafka.
@@ -38,7 +45,60 @@ type KafkaProducerClient interface {
 	Close() error
 }
 
-// MemoryKafkaProducer is a thread-safe in-memory Kafka producer used for local testing and simulation.
+// BrokerKafkaProducer is a synchronous acknowledged Kafka producer.
+type BrokerKafkaProducer struct{ client *kgo.Client }
+
+func NewBrokerKafkaProducer(cfg KafkaOutputConfig) (*BrokerKafkaProducer, error) {
+	if len(cfg.Brokers) == 0 {
+		return nil, fmt.Errorf("kafka output requires brokers")
+	}
+	opts := []kgo.Opt{kgo.SeedBrokers(cfg.Brokers...)}
+	if cfg.Username != "" {
+		opts = append(opts, kgo.SASL(plain.Auth{User: cfg.Username, Pass: cfg.Password}.AsMechanism()))
+	}
+	if cfg.TLSConfig != nil {
+		opts = append(opts, kgo.DialTLSConfig(cfg.TLSConfig))
+	}
+	switch cfg.Acks {
+	case "0":
+		opts = append(opts, kgo.RequiredAcks(kgo.NoAck()))
+	case "1":
+		opts = append(opts, kgo.RequiredAcks(kgo.LeaderAck()))
+	default:
+		opts = append(opts, kgo.RequiredAcks(kgo.AllISRAcks()))
+	}
+	if !cfg.Idempotent {
+		opts = append(opts, kgo.DisableIdempotentWrite())
+	}
+	switch cfg.Compression {
+	case "none":
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.NoCompression()))
+	case "gzip":
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.GzipCompression()))
+	case "snappy":
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.SnappyCompression()))
+	case "zstd":
+		opts = append(opts, kgo.ProducerBatchCompression(kgo.ZstdCompression()))
+	}
+	if cfg.BatchBytes > 0 {
+		opts = append(opts, kgo.ProducerBatchMaxBytes(int32(cfg.BatchBytes)))
+	}
+	if cfg.Linger > 0 {
+		opts = append(opts, kgo.ProducerLinger(cfg.Linger))
+	}
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &BrokerKafkaProducer{client: client}, nil
+}
+func (b *BrokerKafkaProducer) Produce(ctx context.Context, msg *KafkaMessage) error {
+	return b.client.ProduceSync(ctx, &kgo.Record{Topic: msg.Topic, Key: msg.Key, Value: msg.Value, Timestamp: msg.Timestamp}).FirstErr()
+}
+func (b *BrokerKafkaProducer) Flush(ctx context.Context) error { return b.client.Flush(ctx) }
+func (b *BrokerKafkaProducer) Close() error                    { b.client.Close(); return nil }
+
+// MemoryKafkaProducer is an explicit in-memory test double.
 type MemoryKafkaProducer struct {
 	mu       sync.Mutex
 	messages []*KafkaMessage
@@ -84,10 +144,10 @@ type KafkaSink struct {
 	closed bool
 }
 
-// NewKafkaSink creates a KafkaSink instance. If client is nil, it defaults to MemoryKafkaProducer.
+// NewKafkaSink creates a Kafka sink with an explicit client.
 func NewKafkaSink(cfg KafkaOutputConfig, client KafkaProducerClient) *KafkaSink {
 	if client == nil {
-		client = NewMemoryKafkaProducer()
+		panic("nil Kafka producer: use NewBrokerKafkaSink for production or an explicit test double")
 	}
 	if cfg.Topic == "" {
 		cfg.Topic = "worm.normalized.v1"
@@ -96,6 +156,14 @@ func NewKafkaSink(cfg KafkaOutputConfig, client KafkaProducerClient) *KafkaSink 
 		cfg:    cfg,
 		client: client,
 	}
+}
+
+func NewBrokerKafkaSink(cfg KafkaOutputConfig) (*KafkaSink, error) {
+	client, err := NewBrokerKafkaProducer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return NewKafkaSink(cfg, client), nil
 }
 
 func (s *KafkaSink) Emit(ctx context.Context, event *model.NormalizedEvent) error {
@@ -123,9 +191,7 @@ func (s *KafkaSink) Emit(ctx context.Context, event *model.NormalizedEvent) erro
 	return s.client.Produce(ctx, msg)
 }
 
-func (s *KafkaSink) Flush(ctx context.Context) error {
-	return s.client.Flush(ctx)
-}
+func (s *KafkaSink) Flush() error { return s.client.Flush(context.Background()) }
 
 func (s *KafkaSink) Close() error {
 	s.mu.Lock()

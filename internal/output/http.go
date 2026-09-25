@@ -28,12 +28,14 @@ type HTTPOutputConfig struct {
 
 // HTTPSIEMSink buffers normalized events and delivers them to an HTTP SIEM endpoint.
 type HTTPSIEMSink struct {
-	cfg        HTTPOutputConfig
-	client     *http.Client
-	mu         sync.Mutex
-	buffer     []*model.NormalizedEvent
-	flushTimer *time.Timer
-	closed     bool
+	cfg      HTTPOutputConfig
+	client   *http.Client
+	mu       sync.Mutex
+	buffer   []*model.NormalizedEvent
+	stopOnce sync.Once
+	stop     chan struct{}
+	done     chan struct{}
+	closed   bool
 }
 
 // NewHTTPSIEMSink creates a new HTTP SIEM delivery sink.
@@ -66,9 +68,24 @@ func NewHTTPSIEMSink(cfg HTTPOutputConfig) *HTTPSIEMSink {
 			Timeout: cfg.Timeout,
 		},
 		buffer: make([]*model.NormalizedEvent, 0, cfg.BatchEvents),
+		stop:   make(chan struct{}), done: make(chan struct{}),
 	}
-
+	go sink.flushLoop()
 	return sink
+}
+
+func (s *HTTPSIEMSink) flushLoop() {
+	ticker := time.NewTicker(s.cfg.FlushInterval)
+	defer ticker.Stop()
+	defer close(s.done)
+	for {
+		select {
+		case <-ticker.C:
+			_ = s.flushContext(context.Background())
+		case <-s.stop:
+			return
+		}
+	}
 }
 
 // Emit enqueues an event for delivery and flushes when batch limit is reached.
@@ -84,14 +101,14 @@ func (s *HTTPSIEMSink) Emit(ctx context.Context, event *model.NormalizedEvent) e
 	s.mu.Unlock()
 
 	if readyToFlush {
-		return s.Flush(ctx)
+		return s.flushContext(ctx)
 	}
 
 	return nil
 }
 
 // Flush sends all buffered events to the configured HTTP SIEM endpoint.
-func (s *HTTPSIEMSink) Flush(ctx context.Context) error {
+func (s *HTTPSIEMSink) flushContext(ctx context.Context) error {
 	s.mu.Lock()
 	if len(s.buffer) == 0 {
 		s.mu.Unlock()
@@ -103,12 +120,19 @@ func (s *HTTPSIEMSink) Flush(ctx context.Context) error {
 	s.mu.Unlock()
 
 	payload, contentType, err := s.serializeBatch(batch)
-	if err != nil {
-		return fmt.Errorf("failed to serialize batch: %w", err)
+	if err == nil {
+		err = s.sendWithRetry(ctx, payload, contentType)
 	}
-
-	return s.sendWithRetry(ctx, payload, contentType)
+	if err != nil {
+		s.mu.Lock()
+		s.buffer = append(batch, s.buffer...)
+		s.mu.Unlock()
+		return fmt.Errorf("deliver HTTP batch: %w", err)
+	}
+	return nil
 }
+
+func (s *HTTPSIEMSink) Flush() error { return s.flushContext(context.Background()) }
 
 func (s *HTTPSIEMSink) serializeBatch(batch []*model.NormalizedEvent) ([]byte, string, error) {
 	if s.cfg.Format == "json" {
@@ -182,5 +206,7 @@ func (s *HTTPSIEMSink) Close() error {
 	s.mu.Lock()
 	s.closed = true
 	s.mu.Unlock()
-	return s.Flush(context.Background())
+	s.stopOnce.Do(func() { close(s.stop) })
+	<-s.done
+	return s.flushContext(context.Background())
 }

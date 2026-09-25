@@ -65,6 +65,23 @@ func TestStoreAndRetrieveLossless(t *testing.T) {
 	}
 }
 
+func TestListRawByStatusDoesNotDeadlockSingleConnection(t *testing.T) {
+	store := setupTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	saved, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte(`{"event":"restart"}`), ReceivedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.ListRawByStatus(ctx, model.StatusAccepted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].RawID != saved.RawID {
+		t.Fatalf("unexpected accepted recovery set: %+v", events)
+	}
+}
+
 func TestVerifyIntegrityAndTamperDetection(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
@@ -144,6 +161,12 @@ func TestQuarantineAndReplayStatus(t *testing.T) {
 
 	if err := store.Quarantine(ctx, qEntry); err != nil {
 		t.Fatalf("Quarantine failed: %v", err)
+	}
+	// Recovery may reprocess the same accepted parent after a crash. The child
+	// lifecycle row must be updated, not duplicated.
+	qEntry.ErrorDetails = "same child retried after restart"
+	if err := store.Quarantine(ctx, qEntry); err != nil {
+		t.Fatalf("idempotent Quarantine failed: %v", err)
 	}
 
 	// Check raw event status updated
