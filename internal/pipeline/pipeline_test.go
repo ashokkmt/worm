@@ -346,3 +346,93 @@ func TestEmptyBatchAccounting_BA004(t *testing.T) {
 		t.Errorf("expected 1 quarantine entry with reason empty_payload, got %+v", qList)
 	}
 }
+
+type multiTestSink struct {
+	destinations []string
+	emitted      map[string][]*model.NormalizedEvent
+}
+
+func (m *multiTestSink) DestinationNames() []string {
+	return m.destinations
+}
+
+func (m *multiTestSink) Emit(ctx context.Context, e *model.NormalizedEvent) error {
+	for _, d := range m.destinations {
+		m.emitted[d] = append(m.emitted[d], e)
+	}
+	return nil
+}
+
+func (m *multiTestSink) EmitTo(ctx context.Context, dest string, e *model.NormalizedEvent) error {
+	m.emitted[dest] = append(m.emitted[dest], e)
+	return nil
+}
+
+func TestMultiDestinationLossAccountingDoesNotOvercount(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "multi_sink.db")
+	store, err := rawstore.New(dbPath)
+	if err != nil {
+		t.Fatalf("failed to init store: %v", err)
+	}
+	defer store.Close()
+
+	// 2 destinations configured: e.g. cli-stdout and cli-ndjson
+	sink := &multiTestSink{
+		destinations: []string{"cli-stdout", "cli-ndjson"},
+		emitted:      make(map[string][]*model.NormalizedEvent),
+	}
+
+	p := New(Config{Workers: 2, BufferSize: 100}, store, sink)
+	p.Start()
+	defer p.Stop()
+
+	const numEvents = 10
+	ctx := context.Background()
+	for i := 0; i < numEvents; i++ {
+		rec := model.IngestedRecord{
+			Transport:  "http-post",
+			SourceIP:   "127.0.0.1",
+			RawBytes:   []byte(fmt.Sprintf(`{"service":"app","action":"login","user":"u%d"}`, i)),
+			ReceivedAt: time.Now().UTC(),
+		}
+		if err := p.SubmitSync(ctx, rec); err != nil {
+			t.Fatalf("SubmitSync %d failed: %v", i, err)
+		}
+	}
+
+	// Wait for background outbox delivery to complete
+	deadline := time.Now().Add(5 * time.Second)
+	var stats model.LossAccountingStats
+	for time.Now().Before(deadline) {
+		stats = p.Stats()
+		if stats.DeliveryPending == 0 && stats.Delivered == numEvents {
+			break
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+
+	stats = p.Stats()
+	valid, reason := stats.VerifyInvariant()
+	if !valid {
+		t.Fatalf("invariant violated: %s", reason)
+	}
+
+	if stats.Accepted != numEvents {
+		t.Errorf("expected %d accepted, got %d", numEvents, stats.Accepted)
+	}
+	if stats.Normalized != numEvents {
+		t.Errorf("expected %d normalized, got %d", numEvents, stats.Normalized)
+	}
+	// Delivered MUST equal numEvents, not 2*numEvents!
+	if stats.Delivered != numEvents {
+		t.Errorf("expected %d delivered (exact 1-to-1 event delivery), got %d (overcounting bug detected)", numEvents, stats.Delivered)
+	}
+	if stats.DeliveryPending != 0 {
+		t.Errorf("expected 0 pending delivery, got %d", stats.DeliveryPending)
+	}
+	if stats.DeliveryFailed != 0 {
+		t.Errorf("expected 0 failed delivery, got %d", stats.DeliveryFailed)
+	}
+}
+

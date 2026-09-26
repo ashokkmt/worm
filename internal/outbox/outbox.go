@@ -166,3 +166,37 @@ func (o *Outbox) CountByStatus(ctx context.Context, status string) (int64, error
 	err := o.db.QueryRowContext(ctx, query, status).Scan(&count)
 	return count, err
 }
+
+// CountDistinctDelivered returns the number of unique events where all destinations are 'delivered'.
+func (o *Outbox) CountDistinctDelivered(ctx context.Context) (int64, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	var count int64
+	query := `SELECT COUNT(*) FROM (SELECT event_id FROM outbox GROUP BY event_id HAVING COUNT(*) = SUM(CASE WHEN status = 'delivered' THEN 1 ELSE 0 END))`
+	err := o.db.QueryRowContext(ctx, query).Scan(&count)
+	return count, err
+}
+
+// CountDistinctPending returns the number of unique events that have at least one destination still pending delivery.
+func (o *Outbox) CountDistinctPending(ctx context.Context) (int64, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	var count int64
+	query := `SELECT COUNT(DISTINCT event_id) FROM outbox WHERE status = 'pending'`
+	err := o.db.QueryRowContext(ctx, query).Scan(&count)
+	return count, err
+}
+
+// CountDistinctFailed returns the number of unique events with failed destinations and no pending destinations.
+func (o *Outbox) CountDistinctFailed(ctx context.Context) (int64, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+
+	var count int64
+	query := `SELECT COUNT(DISTINCT event_id) FROM outbox WHERE status = 'failed' AND event_id NOT IN (SELECT event_id FROM outbox WHERE status = 'pending')`
+	err := o.db.QueryRowContext(ctx, query).Scan(&count)
+	return count, err
+}
+

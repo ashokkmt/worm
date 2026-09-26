@@ -75,3 +75,63 @@ func TestOutbox_Lifecycle(t *testing.T) {
 		t.Errorf("expected 0 pending, got %d", penCount)
 	}
 }
+
+func TestOutbox_DistinctAccountingMultiDestination(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+
+	ob, err := NewOutbox(db)
+	if err != nil {
+		t.Fatalf("NewOutbox: %v", err)
+	}
+	ctx := context.Background()
+
+	// Enqueue 1 event to 2 sinks: stdout and ndjson
+	id1, err := ob.Enqueue(ctx, "evt-multi-01", "cli-stdout", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := ob.Enqueue(ctx, "evt-multi-01", "cli-ndjson", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Both destinations pending
+	if pending, _ := ob.CountDistinctPending(ctx); pending != 1 {
+		t.Errorf("expected 1 distinct pending event, got %d", pending)
+	}
+	if delivered, _ := ob.CountDistinctDelivered(ctx); delivered != 0 {
+		t.Errorf("expected 0 distinct delivered events, got %d", delivered)
+	}
+
+	// 2. Deliver first destination only
+	if err := ob.MarkDelivered(ctx, id1); err != nil {
+		t.Fatal(err)
+	}
+	// Still 1 pending because second destination is pending
+	if pending, _ := ob.CountDistinctPending(ctx); pending != 1 {
+		t.Errorf("expected 1 distinct pending event, got %d", pending)
+	}
+	if delivered, _ := ob.CountDistinctDelivered(ctx); delivered != 0 {
+		t.Errorf("expected 0 distinct delivered events, got %d", delivered)
+	}
+
+	// 3. Deliver second destination
+	if err := ob.MarkDelivered(ctx, id2); err != nil {
+		t.Fatal(err)
+	}
+	// Row count in outbox is 2, but distinct delivered events is 1
+	if rowCount, _ := ob.CountByStatus(ctx, "delivered"); rowCount != 2 {
+		t.Errorf("expected 2 delivered rows, got %d", rowCount)
+	}
+	if delivered, _ := ob.CountDistinctDelivered(ctx); delivered != 1 {
+		t.Errorf("expected 1 distinct delivered event, got %d", delivered)
+	}
+	if pending, _ := ob.CountDistinctPending(ctx); pending != 0 {
+		t.Errorf("expected 0 distinct pending events, got %d", pending)
+	}
+}
+

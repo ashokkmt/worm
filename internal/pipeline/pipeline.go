@@ -133,8 +133,8 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 		p.quarantined.Store(quarCount)
 		p.pending.Store(pendingCount)
 		p.accepted.Store(normCount + quarCount + pendingCount)
-		if p.outbox != nil {
-			delivered, _ := p.outbox.CountByStatus(ctx, "delivered")
+		if p.outbox != nil && p.durableSink != nil {
+			delivered, _ := p.outbox.CountDistinctDelivered(ctx)
 			p.delivered.Store(delivered)
 		} else {
 			p.delivered.Store(normCount)
@@ -723,10 +723,11 @@ func (p *Pipeline) Stats() model.LossAccountingStats {
 		stats.Pending = p.pending.Load()
 		stats.Accepted = stats.Normalized + stats.Quarantined + stats.Pending
 	}
-	if p.outbox != nil {
-		stats.Delivered, _ = p.outbox.CountByStatus(context.Background(), "delivered")
-		stats.DeliveryPending, _ = p.outbox.CountByStatus(context.Background(), "pending")
-		stats.DeliveryFailed, _ = p.outbox.CountByStatus(context.Background(), "failed")
+	if p.outbox != nil && p.durableSink != nil {
+		stats.Delivered, _ = p.outbox.CountDistinctDelivered(context.Background())
+		stats.DeliveryPending, _ = p.outbox.CountDistinctPending(context.Background())
+		stats.DeliveryFailed, _ = p.outbox.CountDistinctFailed(context.Background())
+		p.delivered.Store(stats.Delivered)
 	}
 	return stats
 }
