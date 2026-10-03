@@ -76,7 +76,7 @@ jobs:
           [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Tag must be vMAJOR.MINOR.PATCH' >&2; exit 1; }
           os='${{ matrix.goos }}'
           arch='${{ matrix.goarch }}'
-          stage="dist/worm-${tag}-${os}-${arch}"
+          stage="dist/${tag}/worm-${tag}-${os}-${arch}"
           mkdir -p "$stage"
           suffix=''
           if [[ "$os" == windows ]]; then suffix='.exe'; fi
@@ -88,12 +88,12 @@ jobs:
         shell: bash
         run: |
           expected="WORM CLI Version: $GITHUB_REF_NAME"
-          actual="$(dist/worm-${GITHUB_REF_NAME}-linux-amd64/worm --version)"
+          actual="$(dist/${GITHUB_REF_NAME}/worm-${GITHUB_REF_NAME}-linux-amd64/worm --version)"
           [[ "$actual" == "$expected" ]] || { echo "Expected '$expected', got '$actual'" >&2; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: worm-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.tar.gz
+          path: dist/${{ github.ref_name }}/*.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -106,16 +106,16 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           pattern: worm-*
-          path: dist/
+          path: dist/${{ github.ref_name }}/
           merge-multiple: true
       - name: Create checksums
         run: |
           set -euo pipefail
           shopt -s nullglob
-          archives=(dist/*.tar.gz)
+          archives=(dist/${GITHUB_REF_NAME}/*.tar.gz)
           [[ ${#archives[@]} -eq 6 ]] || { echo "Expected 6 archives, found ${#archives[@]}" >&2; exit 1; }
-          (cd dist && sha256sum ./*.tar.gz > SHA256SUMS)
+          (cd "dist/${GITHUB_REF_NAME}" && sha256sum ./*.tar.gz > SHA256SUMS)
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/SHA256SUMS --verify-tag --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" "dist/$GITHUB_REF_NAME"/*.tar.gz "dist/$GITHUB_REF_NAME/SHA256SUMS" --verify-tag --generate-notes
