@@ -40,7 +40,6 @@ type ConfigInfo struct {
 	DBPath     string `json:"db_path"`
 	Workers    int    `json:"workers"`
 	AirGapped  bool   `json:"air_gapped"`
-	Version    string `json:"version"`
 	AdminToken string `json:"admin_token,omitempty"`
 }
 
@@ -59,6 +58,7 @@ type Server struct {
 	connManager   *connections.Manager
 	connsDir      string
 	cfgInfo       ConfigInfo
+	version       string
 	distFS        fs.FS
 	startTime     time.Time
 	ingestTracker IngestTracker
@@ -81,10 +81,8 @@ func NewServer(
 	packsDir string,
 	cfgInfo ConfigInfo,
 	distFS fs.FS,
+	version string,
 ) *Server {
-	if cfgInfo.Version == "" {
-		cfgInfo.Version = "1.0.0"
-	}
 	cfgInfo.UIAddress = addr
 	cfgInfo.AirGapped = true
 
@@ -99,6 +97,7 @@ func NewServer(
 		packManager: packMgr,
 		packsDir:    packsDir,
 		cfgInfo:     cfgInfo,
+		version:     version,
 		distFS:      distFS,
 		startTime:   time.Now().UTC(),
 		lastTime:    time.Now().UTC(),
@@ -238,7 +237,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	s.jsonResponse(w, http.StatusOK, map[string]any{
 		"status":         status,
-		"version":        s.cfgInfo.Version,
+		"version":        s.version,
 		"air_gapped":     true,
 		"uptime_seconds": uptime,
 		"sqlite_status":  sqliteStatus,
@@ -987,7 +986,10 @@ func (s *Server) handleRollbackConnection(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
-	s.jsonResponse(w, http.StatusOK, s.cfgInfo)
+	s.jsonResponse(w, http.StatusOK, struct {
+		ConfigInfo
+		Version string `json:"version"`
+	}{ConfigInfo: s.cfgInfo, Version: s.version})
 }
 
 // handleStaticOrSPA serves static files from embedded FS with client-side SPA fallback.

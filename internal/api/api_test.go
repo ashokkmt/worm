@@ -87,7 +87,7 @@ spec:
 		Workers:    2,
 	}
 
-	srv := api.NewServer("127.0.0.1:0", store, pipe, packMgr, packsDir, cfg, mockFS)
+	srv := api.NewServer("127.0.0.1:0", store, pipe, packMgr, packsDir, cfg, mockFS, "test-version")
 	return srv, store, pipe, tempDir
 }
 
@@ -112,8 +112,19 @@ func TestAPI_HealthAndStats(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&health); err != nil {
 		t.Fatalf("failed to decode health: %v", err)
 	}
-	if health["status"] != "ok" || health["air_gapped"] != true {
+	if health["status"] != "ok" || health["air_gapped"] != true || health["version"] != "test-version" {
 		t.Fatalf("invalid health response: %+v", health)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	var config map[string]any
+	if err := json.NewDecoder(rec.Body).Decode(&config); err != nil {
+		t.Fatalf("failed to decode config: %v", err)
+	}
+	if config["version"] != "test-version" {
+		t.Fatalf("expected standalone server version, got %+v", config["version"])
 	}
 
 	// 2. Stats
@@ -479,10 +490,9 @@ func TestAPI_AdminTokenAuth_BA023(t *testing.T) {
 	defer store.Close()
 
 	cfg := api.ConfigInfo{
-		Version:    "1.0.0",
 		AdminToken: "super-secret-admin-token",
 	}
-	srv := api.NewServer("127.0.0.1:0", store, nil, nil, "", cfg, nil)
+	srv := api.NewServer("127.0.0.1:0", store, nil, nil, "", cfg, nil, "test-version")
 	handler := srv.Handler()
 
 	// 1. Without token on raw endpoint -> 401 Unauthorized

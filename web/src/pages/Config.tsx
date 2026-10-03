@@ -534,7 +534,7 @@ export const Config: React.FC = () => {
                     <div className="text-[11px] text-[#8b949e] truncate mt-0.5">SIH 26156 reference core</div>
                   </div>
                   <div className="shrink-0">
-                    <Badge variant="purple">v{config?.version || '1.0.4'}</Badge>
+                    <Badge variant="purple">{config?.version || 'dev'}</Badge>
                   </div>
                 </div>
               </div>

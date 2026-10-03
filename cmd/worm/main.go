@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -28,7 +29,30 @@ import (
 	"worm/web"
 )
 
+var Version = "dev"
+
+func init() {
+	if Version != "dev" {
+		return
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" && len(setting.Value) >= 7 {
+			Version = "dev-" + setting.Value[:7]
+			return
+		}
+	}
+}
+
 func main() {
+	if len(os.Args) == 2 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
+		fmt.Printf("WORM CLI Version: %s\n", Version)
+		return
+	}
+
 	// 0. Ergonomic CLI dispatch (e.g. ./bin/worm -packs, ./bin/worm -replay all, ./bin/worm -stop, etc.)
 	if len(os.Args) > 1 {
 		cmd := os.Args[1]
@@ -514,10 +538,9 @@ func main() {
 			InboxDir:   *inboxDir,
 			DBPath:     *dbPath,
 			Workers:    *workers,
-			Version:    "1.0.4",
 			AdminToken: *adminToken,
 		}
-		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist())
+		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist(), Version)
 		uiServer.SetIngestTracker(mgr)
 		uiServer.SetConnManager(connMgr, *sinksDir)
 		if err := uiServer.Start(); err != nil {

@@ -131,6 +131,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 		tempPacksDir,
 		api.ConfigInfo{InboxDir: inboxDir},
 		nil,
+		"test-version",
 	)
 	handler := srv.Handler()
 
