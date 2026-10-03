@@ -105,7 +105,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 	}
 
 	// Check normalized count: exactly 7 logs must be normalized
-	normEvents, normTotal, err := store.ListNormalized(ctx, "", "", "", 50, 0)
+	_, normTotal, err := store.ListNormalized(ctx, "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("ListNormalized failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 	t.Logf("Replay All executed successfully: %+v", replayResp)
 
 	// 4. Verify that all 10 events are now normalized
-	normEvents, normTotal, err = store.ListNormalized(ctx, "", "", "", 50, 0)
+	normEvents, normTotal, err := store.ListNormalized(ctx, "", "", "", 50, 0)
 	if err != nil {
 		t.Fatalf("ListNormalized failed: %v", err)
 	}

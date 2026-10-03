@@ -38,6 +38,7 @@ type KafkaConsumerRecord struct {
 type KafkaConsumerClient interface {
 	Poll(ctx context.Context, timeout time.Duration) ([]*KafkaConsumerRecord, error)
 	CommitOffset(ctx context.Context, topic string, partition int, offset int64) error
+	AllowRebalance()
 	Close() error
 }
 
@@ -67,6 +68,7 @@ func (b *BrokerKafkaConsumer) Poll(ctx context.Context, timeout time.Duration) (
 	defer cancel()
 	fetches := b.client.PollFetches(pollCtx)
 	if errs := fetches.Errors(); len(errs) > 0 {
+		b.client.AllowRebalance()
 		if pollCtx.Err() != nil && ctx.Err() == nil {
 			return nil, nil
 		}
@@ -81,13 +83,18 @@ func (b *BrokerKafkaConsumer) Poll(ctx context.Context, timeout time.Duration) (
 func (b *BrokerKafkaConsumer) CommitOffset(ctx context.Context, topic string, partition int, offset int64) error {
 	return b.client.CommitRecords(ctx, &kgo.Record{Topic: topic, Partition: int32(partition), Offset: offset})
 }
-func (b *BrokerKafkaConsumer) Close() error { b.client.Close(); return nil }
+func (b *BrokerKafkaConsumer) AllowRebalance() { b.client.AllowRebalance() }
+func (b *BrokerKafkaConsumer) Close() error {
+	b.client.CloseAllowingRebalance()
+	return nil
+}
 
 // MemoryKafkaConsumer is an explicit thread-safe test double for Kafka ingestion.
 type MemoryKafkaConsumer struct {
 	mu        sync.Mutex
 	queue     []*KafkaConsumerRecord
 	committed map[string]int64
+	allowed   int
 	closed    bool
 }
 
@@ -117,6 +124,18 @@ func (m *MemoryKafkaConsumer) CommitOffset(ctx context.Context, topic string, pa
 	key := fmt.Sprintf("%s-%d", topic, partition)
 	m.committed[key] = offset
 	return nil
+}
+
+func (m *MemoryKafkaConsumer) AllowRebalance() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.allowed++
+}
+
+func (m *MemoryKafkaConsumer) AllowCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.allowed
 }
 
 func (m *MemoryKafkaConsumer) Close() error {
@@ -202,30 +221,9 @@ func (a *KafkaAdapter) Start(ctx context.Context, out chan<- model.IngestedRecor
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-
-		for _, msg := range records {
-			ackChan := make(chan error, 1)
-			ingested := model.IngestedRecord{
-				RawBytes: msg.Value, Transport: "kafka_input", SourceIP: "kafka://" + msg.Topic,
-				ReceivedAt: time.Now().UTC(), Ack: ackChan,
-				Metadata: model.ReceiveMetadata{ConnectionID: a.cfg.Name, KafkaTopic: msg.Topic, KafkaPartition: msg.Partition, KafkaOffset: msg.Offset, KafkaKey: string(msg.Key)},
-			}
-
-			select {
-			case out <- ingested:
-				select {
-				case commitErr := <-ackChan:
-					if commitErr != nil {
-						// Raw store durability failed: do not commit offset
-						continue
-					}
-					// Durably stored: commit Kafka offset
-					_ = a.client.CommitOffset(ctx, msg.Topic, msg.Partition, msg.Offset)
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			case <-ctx.Done():
-				return ctx.Err()
+		if len(records) > 0 {
+			if err := a.processBatch(ctx, out, records); err != nil {
+				return err
 			}
 		}
 
@@ -233,6 +231,36 @@ func (a *KafkaAdapter) Start(ctx context.Context, out chan<- model.IngestedRecor
 			time.Sleep(50 * time.Millisecond)
 		}
 	}
+}
+
+func (a *KafkaAdapter) processBatch(ctx context.Context, out chan<- model.IngestedRecord, records []*KafkaConsumerRecord) error {
+	defer a.client.AllowRebalance()
+	for _, msg := range records {
+		ackChan := make(chan error, 1)
+		ingested := model.IngestedRecord{
+			RawBytes: msg.Value, Transport: "kafka_input", SourceIP: "kafka://" + msg.Topic,
+			ReceivedAt: time.Now().UTC(), Ack: ackChan,
+			Metadata: model.ReceiveMetadata{ConnectionID: a.cfg.Name, KafkaTopic: msg.Topic, KafkaPartition: msg.Partition, KafkaOffset: msg.Offset, KafkaKey: string(msg.Key)},
+		}
+
+		select {
+		case out <- ingested:
+			select {
+			case commitErr := <-ackChan:
+				if commitErr != nil {
+					// Raw store durability failed: do not commit offset
+					continue
+				}
+				// Durably stored: commit Kafka offset
+				_ = a.client.CommitOffset(ctx, msg.Topic, msg.Partition, msg.Offset)
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 func (a *KafkaAdapter) Stop() error {

@@ -39,7 +39,7 @@ func New(dbPath string) (*RawStore, error) {
 	// Set pragmas for crash resilience and concurrency
 	pragmas := []string{
 		"PRAGMA journal_mode=WAL;",
-		"PRAGMA synchronous=NORMAL;",
+		"PRAGMA synchronous=FULL;",
 		"PRAGMA busy_timeout=5000;",
 		"PRAGMA foreign_keys=ON;",
 	}
@@ -62,6 +62,18 @@ func New(dbPath string) (*RawStore, error) {
 const CurrentSchemaVersion = 4
 
 func initSchema(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin schema migration: %w", err)
+	}
+	defer tx.Rollback()
+	if err := migrateSchema(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func migrateSchema(db sqlExecutor) error {
 	var version int
 	if err := db.QueryRow("PRAGMA user_version;").Scan(&version); err != nil {
 		return fmt.Errorf("failed to read user_version: %w", err)
@@ -132,13 +144,17 @@ func initSchema(db *sql.DB) error {
 			"ALTER TABLE normalized_events ADD COLUMN record_ordinal INTEGER NOT NULL DEFAULT 0;",
 		}
 		for _, m := range migrations {
-			_, _ = db.Exec(m)
+			if _, err := db.Exec(m); err != nil {
+				return fmt.Errorf("failed to apply schema migration %q: %w", m, err)
+			}
 		}
 		version = 2
 	}
 
 	if version < 3 {
-		_, _ = db.Exec("ALTER TABLE raw_events ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';")
+		if _, err := db.Exec("ALTER TABLE raw_events ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}';"); err != nil {
+			return fmt.Errorf("failed to add raw event metadata column: %w", err)
+		}
 		version = 3
 	}
 
@@ -164,6 +180,11 @@ func initSchema(db *sql.DB) error {
 	return nil
 }
 
+type sqlExecutor interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
 // Store commits verbatim raw bytes, calculates SHA-256 digest, and assigns an immutable raw ID.
 func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.RawEvent, error) {
 	s.writeMu.Lock()
@@ -175,6 +196,26 @@ func (s *RawStore) Store(ctx context.Context, rec model.IngestedRecord) (*model.
 
 	hash := sha256.Sum256(rec.RawBytes)
 	shaHex := hex.EncodeToString(hash[:])
+	if rec.Transport == "file" && rec.Metadata.FileID != "" {
+		var existingID, existingHash string
+		err := s.db.QueryRowContext(ctx, `SELECT raw_id, raw_sha256 FROM raw_events
+			WHERE json_extract(metadata_json, '$.file_id')=? AND COALESCE(json_extract(metadata_json, '$.file_offset'),0)=?
+			LIMIT 1`, rec.Metadata.FileID, rec.Metadata.FileOffset).Scan(&existingID, &existingHash)
+		if err == nil {
+			if existingHash != shaHex {
+				return nil, fmt.Errorf("file spool identity %s at offset %d was already committed with different bytes", rec.Metadata.FileID, rec.Metadata.FileOffset)
+			}
+			event, err := s.Retrieve(ctx, existingID)
+			if err != nil {
+				return nil, err
+			}
+			event.Duplicate = true
+			return event, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("check file spool replay identity: %w", err)
+		}
+	}
 
 	// Format monotonic, predictable raw ID: worm-raw-YYYYMMDD-<seq>-<rand>
 	seq := s.counter.Add(1)
@@ -554,6 +595,13 @@ func (s *RawStore) StoreNormalized(ctx context.Context, event *model.NormalizedE
 	return s.StoreNormalizedWithOutbox(ctx, event, nil)
 }
 
+func (s *RawStore) DeleteNormalizedChild(ctx context.Context, rawID string, ordinal int) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	_, err := s.db.ExecContext(ctx, "DELETE FROM normalized_events WHERE raw_id=? AND record_ordinal=?", rawID, ordinal)
+	return err
+}
+
 // StoreNormalizedWithOutbox atomically stores the projection and one idempotent delivery row per destination.
 func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.NormalizedEvent, destinations []string) error {
 	s.writeMu.Lock()
@@ -592,7 +640,7 @@ func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.N
 		data, _ = json.Marshal(event)
 	}
 	sum := sha256.Sum256(data)
-	_, err = tx.ExecContext(ctx, `INSERT INTO normalized_events(event_id,raw_id,record_ordinal,source_category,source_id,severity_id,activity_name,message,event_time,received_time,event_json,event_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET event_json=excluded.event_json,event_sha256=excluded.event_sha256,message=excluded.message`, event.Worm.EventID, event.Worm.RawID, event.Worm.RecordOrdinal, event.Worm.SourceCategory, event.Worm.SourceID, severity, activity, msg, eventTime, event.Worm.ReceivedTime.Format(time.RFC3339Nano), string(data), hex.EncodeToString(sum[:]))
+	_, err = tx.ExecContext(ctx, `INSERT INTO normalized_events(event_id,raw_id,record_ordinal,source_category,source_id,severity_id,activity_name,message,event_time,received_time,event_json,event_sha256) VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(event_id) DO UPDATE SET source_category=excluded.source_category,source_id=excluded.source_id,severity_id=excluded.severity_id,activity_name=excluded.activity_name,message=excluded.message,event_time=excluded.event_time,received_time=excluded.received_time,event_json=excluded.event_json,event_sha256=excluded.event_sha256`, event.Worm.EventID, event.Worm.RawID, event.Worm.RecordOrdinal, event.Worm.SourceCategory, event.Worm.SourceID, severity, activity, msg, eventTime, event.Worm.ReceivedTime.Format(time.RFC3339Nano), string(data), hex.EncodeToString(sum[:]))
 	if err != nil {
 		return err
 	}
@@ -606,6 +654,32 @@ func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.N
 }
 
 func (s *RawStore) DB() *sql.DB { return s.db }
+
+// CountCompletedChildren returns child outcomes already committed for a raw input.
+func (s *RawStore) CountCompletedChildren(ctx context.Context, rawID string) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM normalized_events WHERE raw_id=?) +
+		(SELECT COUNT(*) FROM quarantine WHERE raw_id=?)`, rawID, rawID).Scan(&count)
+	return count, err
+}
+
+func (s *RawStore) ChildOutcomeCounts(ctx context.Context, rawID string) (normalized, quarantined int64, err error) {
+	err = s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM normalized_events WHERE raw_id=?),
+		(SELECT COUNT(*) FROM quarantine WHERE raw_id=?)`, rawID, rawID).Scan(&normalized, &quarantined)
+	return
+}
+
+// HasCompletedChild reports whether normalization or quarantine has committed a child outcome.
+func (s *RawStore) HasCompletedChild(ctx context.Context, rawID string, ordinal int) (bool, error) {
+	var count int
+	err := s.db.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM normalized_events WHERE raw_id=? AND record_ordinal=?) +
+		(SELECT COUNT(*) FROM quarantine WHERE raw_id=? AND record_ordinal=?)`, rawID, ordinal, rawID, ordinal).Scan(&count)
+	return count > 0, err
+}
+
 func (s *RawStore) CountRawStatus(ctx context.Context, status model.RawStatus) (int64, error) {
 	var n int64
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM raw_events WHERE status=?", string(status)).Scan(&n)

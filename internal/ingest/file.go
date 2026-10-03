@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -55,6 +57,8 @@ func (w *FileWatcher) Start(ctx context.Context, out chan<- model.IngestedRecord
 
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
+	w.scanProcessing(ctx, processingDir, processedDir, failedDir, out)
+	w.scanInbox(ctx, processingDir, processedDir, failedDir, out)
 
 	for {
 		select {
@@ -90,13 +94,34 @@ func (w *FileWatcher) scanInbox(ctx context.Context, processingDir, processedDir
 			continue
 		}
 
-		// Ingest file records
-		ingestErr := IngestFile(ctx, procPath, out)
-		if ingestErr != nil {
-			_ = os.Rename(procPath, filepath.Join(failedDir, name))
-		} else {
-			_ = os.Rename(procPath, filepath.Join(processedDir, name))
+		w.processFile(ctx, procPath, name, processedDir, failedDir, out)
+	}
+}
+
+func (w *FileWatcher) scanProcessing(ctx context.Context, processingDir, processedDir, failedDir string, out chan<- model.IngestedRecord) {
+	entries, err := os.ReadDir(processingDir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") || strings.HasSuffix(entry.Name(), ".tmp") {
+			continue
 		}
+		w.processFile(ctx, filepath.Join(processingDir, entry.Name()), entry.Name(), processedDir, failedDir, out)
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+func (w *FileWatcher) processFile(ctx context.Context, procPath, name, processedDir, failedDir string, out chan<- model.IngestedRecord) {
+	if err := IngestFile(ctx, procPath, out); err != nil {
+		if ctx.Err() != nil {
+			return
+		}
+		_ = os.Rename(procPath, filepath.Join(failedDir, name))
+	} else {
+		_ = os.Rename(procPath, filepath.Join(processedDir, name))
 	}
 }
 
@@ -116,6 +141,13 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 	if info.IsDir() {
 		return fmt.Errorf("target is a directory, not a file: %s", filePath)
 	}
+	absPath, err := filepath.Abs(filePath)
+	if err != nil {
+		return fmt.Errorf("resolve file path %s: %w", filePath, err)
+	}
+	identity := fmt.Sprintf("%s\x00%d\x00%d", absPath, info.Size(), info.ModTime().UnixNano())
+	fileIDBytes := sha256.Sum256([]byte(identity))
+	fileID := hex.EncodeToString(fileIDBytes[:])
 
 	ext := strings.ToLower(filepath.Ext(filePath))
 
@@ -139,7 +171,7 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 			RawBytes:   data,
 			ReceivedAt: time.Now().UTC(),
 			Ack:        ackChan,
-			Metadata:   model.ReceiveMetadata{FilePath: filePath, FileOffset: 0},
+			Metadata:   model.ReceiveMetadata{FilePath: absPath, FileID: fileID, FileOffset: 0},
 		}
 
 		select {
@@ -203,7 +235,7 @@ func IngestFile(ctx context.Context, filePath string, out chan<- model.IngestedR
 			RawBytes:   payload,
 			ReceivedAt: time.Now().UTC(),
 			Ack:        ackChan,
-			Metadata:   model.ReceiveMetadata{FilePath: filePath, FileOffset: lineOffset},
+			Metadata:   model.ReceiveMetadata{FilePath: absPath, FileID: fileID, FileOffset: lineOffset},
 		}
 
 		select {

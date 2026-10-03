@@ -616,6 +616,53 @@ func TestKafkaAdapter(t *testing.T) {
 	if committed != 101 {
 		t.Errorf("expected committed offset 101, got %d", committed)
 	}
+	if got := memConsumer.AllowCount(); got != 1 {
+		t.Errorf("expected rebalance gate released once after the batch, got %d", got)
+	}
 
 	_ = adapter.Stop()
+}
+
+func TestFileWatcherRecoversProcessingDirectoryOnStart(t *testing.T) {
+	inbox := t.TempDir()
+	processing := filepath.Join(inbox, "processing")
+	if err := os.MkdirAll(processing, 0755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte(`{"event":"restart-recovery"}`)
+	if err := os.WriteFile(filepath.Join(processing, "recover.json"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	watcher := ingest.NewFileWatcher(inbox, time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan model.IngestedRecord, 1)
+	done := make(chan error, 1)
+	go func() { done <- watcher.Start(ctx, out) }()
+
+	select {
+	case rec := <-out:
+		if string(rec.RawBytes) != string(content) || rec.Metadata.FileID == "" {
+			t.Fatalf("unexpected recovered file record: %+v", rec)
+		}
+		rec.Ack <- nil
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("processing file was not recovered")
+	}
+
+	processed := filepath.Join(inbox, "processed", "recover.json")
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(processed); err == nil {
+			cancel()
+			if err := <-done; err != context.Canceled {
+				t.Fatalf("watcher returned %v, want context.Canceled", err)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	t.Fatal("recovered file was not moved to processed")
 }

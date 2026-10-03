@@ -105,6 +105,7 @@ export const Config: React.FC = () => {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [connections, setConnections] = useState<ConnectionSummary[]>([]);
   const [selectedYaml, setSelectedYaml] = useState(SAMPLE_HTTP_YAML);
+  const [adminToken, setAdminToken] = useState('');
   const [activeTab, setActiveTab] = useState<'connections' | 'system'>('connections');
   const [actionStatus, setActionStatus] = useState<{ type: 'idle' | 'success' | 'error'; message: string }>({
     type: 'idle',
@@ -236,6 +237,21 @@ export const Config: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <label className="block max-w-xl text-xs font-mono text-[#8b949e]">
+        Management API token <span className="text-[#6e7681]">(kept in this tab only)</span>
+        <input
+          type="password"
+          autoComplete="new-password"
+          value={adminToken}
+          onChange={(event) => {
+            setAdminToken(event.target.value);
+            apiService.setAdminToken(event.target.value);
+          }}
+          className="mt-1 w-full rounded border border-[#30363d] bg-[#0d1117] px-3 py-2 text-[#c9d1d9] outline-none focus:border-[#58a6ff]"
+          placeholder="Enter -admin-token / WORM_ADMIN_TOKEN"
+        />
+      </label>
 
       {activeTab === 'connections' ? (
         <div className="space-y-6">
@@ -454,7 +470,7 @@ export const Config: React.FC = () => {
                   <div className="text-[11px] text-[#8b949e] truncate mt-0.5">RFC 3164 / 5424 UDP datagram receiver</div>
                 </div>
                 <div className="shrink-0">
-                  <Badge variant="green">{config?.syslog_udp || ':514'}</Badge>
+                  <Badge variant="green">{config?.syslog_udp || '127.0.0.1:1514'}</Badge>
                 </div>
               </div>
 
@@ -464,7 +480,7 @@ export const Config: React.FC = () => {
                   <div className="text-[11px] text-[#8b949e] truncate mt-0.5">Framed &amp; octet-counted TCP streams</div>
                 </div>
                 <div className="shrink-0">
-                  <Badge variant="green">{config?.syslog_tcp || ':514'}</Badge>
+                  <Badge variant="green">{config?.syslog_tcp || '127.0.0.1:1514'}</Badge>
                 </div>
               </div>
 
@@ -484,7 +500,7 @@ export const Config: React.FC = () => {
                   <div className="text-[11px] text-[#8b949e] truncate mt-0.5">POST /api/v1/ingest log receiver</div>
                 </div>
                 <div className="shrink-0">
-                  <Badge variant="green">{config?.http_ingest || ':8080'}</Badge>
+                  <Badge variant="green">{config?.http_ingest || '127.0.0.1:8080'}</Badge>
                 </div>
               </div>
 
@@ -511,7 +527,7 @@ export const Config: React.FC = () => {
                 <div className="flex items-center justify-between p-3 rounded-md bg-[#0d1117] border border-[#21262d] gap-3 min-w-0">
                   <div className="min-w-0 flex-1">
                     <div className="text-[#f0f6fc] font-semibold truncate">SQLite Raw &amp; Quarantine Store</div>
-                    <div className="text-[11px] text-[#8b949e] truncate mt-0.5">WAL mode, synchronous=NORMAL, cryptographic store</div>
+                    <div className="text-[11px] text-[#8b949e] truncate mt-0.5">WAL mode, synchronous=FULL, cryptographic store</div>
                   </div>
                   <span className="text-[#c9d1d9] font-mono min-w-0 max-w-[50%] text-[11px] sm:text-xs truncate bg-[#161b22] px-2.5 py-1 rounded border border-[#30363d]">
                     {config?.db_path || 'data/worm.db'}
