@@ -36,6 +36,7 @@ type ReceiveMetadata struct {
 	Listener       string `json:"listener,omitempty"`
 	RequestID      string `json:"request_id,omitempty"`
 	FilePath       string `json:"file_path,omitempty"`
+	FileID         string `json:"file_id,omitempty"`
 	FileOffset     int64  `json:"file_offset,omitempty"`
 	ObjectKey      string `json:"object_key,omitempty"`
 	Watermark      string `json:"watermark,omitempty"`
@@ -48,6 +49,7 @@ type ReceiveMetadata struct {
 // RawEvent represents a durably committed, cryptographically hashed raw log record.
 type RawEvent struct {
 	RawID      string          `json:"raw_id"`      // immutable monotonic ID e.g. "worm-raw-20260920-00000001"
+	Duplicate  bool            `json:"-"`           // Store returned an already committed file-spool record
 	RawSHA256  string          `json:"raw_sha256"`  // hex-encoded SHA-256 digest
 	ByteCount  int             `json:"byte_count"`  // exact size of raw payload in bytes
 	Transport  string          `json:"transport"`   // transport protocol/channel

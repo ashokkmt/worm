@@ -299,6 +299,56 @@ func TestRejectionAccounting_BA001(t *testing.T) {
 	}
 }
 
+func TestQuarantineWriteFailureRemainsPending(t *testing.T) {
+	p, store, _ := setupTestPipeline(t, 1)
+	if _, err := store.DB().Exec(`CREATE TRIGGER fail_quarantine BEFORE INSERT ON quarantine BEGIN SELECT RAISE(FAIL, 'injected quarantine failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SubmitSync(context.Background(), model.IngestedRecord{Transport: "test", RawBytes: []byte("INVALID_GARBAGE")}); err != nil {
+		t.Fatal(err)
+	}
+	stats := p.Stats()
+	if stats.Accepted != 1 || stats.Quarantined != 0 || stats.Pending != 1 {
+		t.Fatalf("failed quarantine must remain pending, got %+v", stats)
+	}
+	rows, err := store.ListRawByStatus(context.Background(), model.StatusAccepted)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("raw row should remain recoverable as accepted, rows=%d err=%v", len(rows), err)
+	}
+}
+
+func TestStartupRecoveryResumesOnlyUncommittedBatchChildren(t *testing.T) {
+	store, err := rawstore.New(filepath.Join(t.TempDir(), "recovery.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	raw, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte(`[{"id":"first"},{"id":"second"}]`), ReceivedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior := &model.NormalizedEvent{Worm: model.WormEnvelope{EventID: "prior-child", RawID: raw.RawID, RecordOrdinal: 0, SourceCategory: "other", SourceID: "local", ReceivedTime: raw.ReceivedAt, Status: "normalized"}, OCSF: map[string]any{"message": "first", "time": raw.ReceivedAt.UnixMilli(), "category_name": "Other Activity", "class_name": "Base Event"}}
+	if err := store.StoreNormalized(ctx, prior); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateStatus(ctx, raw.RawID, model.StatusAccepted); err != nil {
+		t.Fatal(err)
+	}
+
+	p := New(Config{Workers: 1, BufferSize: 4}, store, NewMemorySink())
+	p.Start()
+	p.Stop()
+	stats := p.Stats()
+	if stats.Accepted != 2 || stats.Normalized != 2 || stats.Quarantined != 0 || stats.Pending != 0 {
+		t.Fatalf("recovery should account for exactly two batch children, got %+v", stats)
+	}
+	rows, total, err := store.ListNormalized(ctx, "", "", "", 10, 0)
+	if err != nil || total != 2 || len(rows) != 2 {
+		t.Fatalf("expected two normalized children after recovery, total=%d rows=%d err=%v", total, len(rows), err)
+	}
+}
+
 func TestEmptyBatchAccounting_BA004(t *testing.T) {
 	p, store, _ := setupTestPipeline(t, 2)
 	ctx := context.Background()
@@ -435,4 +485,3 @@ func TestMultiDestinationLossAccountingDoesNotOvercount(t *testing.T) {
 		t.Errorf("expected 0 failed delivery, got %d", stats.DeliveryFailed)
 	}
 }
-

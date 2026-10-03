@@ -55,6 +55,7 @@ type ManifestFile struct {
 type ParquetSink struct {
 	cfg     ParquetOutputConfig
 	mu      sync.Mutex
+	flushMu sync.Mutex
 	buffers map[string][]*model.NormalizedEvent
 	closed  bool
 }
@@ -81,18 +82,19 @@ func (s *ParquetSink) Emit(ctx context.Context, event *model.NormalizedEvent) er
 	}
 
 	partKey := s.computePartitionKey(event)
+	for _, queued := range s.buffers[partKey] {
+		if queued.Worm.EventID == event.Worm.EventID {
+			s.mu.Unlock()
+			return nil
+		}
+	}
 	s.buffers[partKey] = append(s.buffers[partKey], event)
 
 	flushNow := len(s.buffers[partKey]) >= s.cfg.MaxRowsPerFile
-	var toFlush []*model.NormalizedEvent
-	if flushNow {
-		toFlush = s.buffers[partKey]
-		delete(s.buffers, partKey)
-	}
 	s.mu.Unlock()
 
 	if flushNow {
-		return s.flushPartition(partKey, toFlush)
+		return s.flushBuffered(partKey)
 	}
 
 	return nil
@@ -128,19 +130,33 @@ func (s *ParquetSink) computePartitionKey(event *model.NormalizedEvent) string {
 
 func (s *ParquetSink) Flush() error {
 	s.mu.Lock()
-	partitions := make(map[string][]*model.NormalizedEvent, len(s.buffers))
-	for k, v := range s.buffers {
-		if len(v) > 0 {
-			partitions[k] = v
-		}
+	partitions := make([]string, 0, len(s.buffers))
+	for k := range s.buffers {
+		partitions = append(partitions, k)
 	}
-	s.buffers = make(map[string][]*model.NormalizedEvent)
 	s.mu.Unlock()
 
-	for partKey, events := range partitions {
-		if err := s.flushPartition(partKey, events); err != nil {
+	for _, partKey := range partitions {
+		if err := s.flushBuffered(partKey); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func (s *ParquetSink) flushBuffered(partKey string) error {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
+
+	s.mu.Lock()
+	events := s.buffers[partKey]
+	delete(s.buffers, partKey)
+	s.mu.Unlock()
+	if err := s.flushPartition(partKey, events); err != nil {
+		s.mu.Lock()
+		s.buffers[partKey] = append(events, s.buffers[partKey]...)
+		s.mu.Unlock()
+		return err
 	}
 	return nil
 }
@@ -248,6 +264,9 @@ func (s *ParquetSink) flushPartition(partKey string, events []*model.NormalizedE
 	if s.cfg.Manifest {
 		relPath, _ := filepath.Rel(s.cfg.Path, finalPath)
 		if err := s.updateManifest(ManifestFile{RelativePath: relPath, PartitionKey: partKey, RowCount: len(events), SizeBytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), MinTime: minTime, MaxTime: maxTime, SchemaVersion: schemaVer}); err != nil {
+			if removeErr := os.Remove(finalPath); removeErr != nil {
+				return fmt.Errorf("update parquet manifest: %w (could not remove uncommitted file: %v)", err, removeErr)
+			}
 			return err
 		}
 	}

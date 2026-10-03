@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -303,6 +304,11 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 		p.pending.Add(-1)
 		return
 	}
+	if rawEvt.Duplicate && (rawEvt.Status == model.StatusNormalized || rawEvt.Status == model.StatusQuarantined || rawEvt.Status == model.StatusPartial) {
+		p.accepted.Add(-1)
+		p.pending.Add(-1)
+		return
+	}
 
 	history = append(history, model.ProcessingStep{
 		Stage:     "raw_commit",
@@ -311,6 +317,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 	})
 
 	preview := safePreview(rawEvt.Payload, 256)
+	recovering := rec.ExistingRawID != "" || rawEvt.Duplicate
 
 	// Stage 2: Format auto-detection & Syntax decoding
 	decoder, decodedRecords, err := p.registry.DetectAndDecode(rawEvt.Payload)
@@ -321,14 +328,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			stage = "format_detect"
 		}
 
-		history = append(history, model.ProcessingStep{
-			Stage:     stage,
-			Timestamp: time.Now().UTC(),
-			Result:    "failed",
-			Error:     err.Error(),
-		})
-
-		_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+		if !p.persistQuarantine(ctx, model.QuarantineEntry{
 			RawID:          rawEvt.RawID,
 			RecordOrdinal:  0,
 			RawSHA256:      rawEvt.RawSHA256,
@@ -338,10 +338,9 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			RawPreview:     preview,
 			ReplayEligible: true,
 			QuarantinedAt:  time.Now().UTC(),
-		})
-
-		p.quarantined.Add(1)
-		p.pending.Add(-1)
+		}) {
+			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		}
 		return
 	}
 
@@ -353,12 +352,23 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 
 	// Adjust loss accounting counters for batch expansion
 	numChildren := len(decodedRecords)
-	if numChildren > 1 {
+	if recovering {
+		completed, countErr := p.store.CountCompletedChildren(ctx, rawEvt.RawID)
+		if countErr != nil {
+			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+			return
+		}
+		if numChildren > 0 {
+			delta := int64(numChildren) - completed - 1
+			p.accepted.Add(delta)
+			p.pending.Add(delta)
+		}
+	} else if numChildren > 1 {
 		p.accepted.Add(int64(numChildren - 1))
 		p.pending.Add(int64(numChildren - 1))
 	} else if numChildren == 0 {
 		// BA-004: Zero-record batch: quarantine as empty payload so accounting balances
-		_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+		if !p.persistQuarantine(ctx, model.QuarantineEntry{
 			RawID:          rawEvt.RawID,
 			RecordOrdinal:  0,
 			RawSHA256:      rawEvt.RawSHA256,
@@ -368,9 +378,9 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			RawPreview:     preview,
 			ReplayEligible: false,
 			QuarantinedAt:  time.Now().UTC(),
-		})
-		p.quarantined.Add(1)
-		p.pending.Add(-1)
+		}) {
+			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		}
 		return
 	}
 
@@ -380,9 +390,19 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 		snap = p.packManager.Active()
 	}
 
-	childNormalizedCount := 0
+	unresolvedChild := false
 
 	for _, decRec := range decodedRecords {
+		if recovering {
+			completed, countErr := p.store.HasCompletedChild(ctx, rawEvt.RawID, decRec.RecordOrdinal)
+			if countErr != nil {
+				unresolvedChild = true
+				continue
+			}
+			if completed {
+				continue
+			}
+		}
 		childHistory := make([]model.ProcessingStep, len(history), len(history)+4)
 		copy(childHistory, history)
 
@@ -404,14 +424,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 					reason = "ambiguous_source"
 				}
 
-				childHistory = append(childHistory, model.ProcessingStep{
-					Stage:     "parser_match",
-					Timestamp: time.Now().UTC(),
-					Result:    "failed",
-					Error:     matchErr.Error(),
-				})
-
-				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+				if !p.persistQuarantine(ctx, model.QuarantineEntry{
 					RawID:          rawEvt.RawID,
 					RecordOrdinal:  decRec.RecordOrdinal,
 					RawSHA256:      rawEvt.RawSHA256,
@@ -421,10 +434,9 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 					RawPreview:     childPreview,
 					ReplayEligible: true,
 					QuarantinedAt:  time.Now().UTC(),
-				})
-
-				p.quarantined.Add(1)
-				p.pending.Add(-1)
+				}) {
+					unresolvedChild = true
+				}
 				continue
 			}
 
@@ -442,7 +454,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			var normErr error
 			normalized, normErr = p.normalizer.Normalize(rawEvt, decRec, pack, childHistory)
 			if normErr != nil {
-				_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+				if !p.persistQuarantine(ctx, model.QuarantineEntry{
 					RawID:          rawEvt.RawID,
 					RecordOrdinal:  decRec.RecordOrdinal,
 					RawSHA256:      rawEvt.RawSHA256,
@@ -452,9 +464,9 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 					RawPreview:     childPreview,
 					ReplayEligible: true,
 					QuarantinedAt:  time.Now().UTC(),
-				})
-				p.quarantined.Add(1)
-				p.pending.Add(-1)
+				}) {
+					unresolvedChild = true
+				}
 				continue
 			}
 		} else {
@@ -502,7 +514,7 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 		}
 
 		if valErr := p.validator.Validate(normalized); valErr != nil {
-			_ = p.store.Quarantine(ctx, model.QuarantineEntry{
+			if !p.persistQuarantine(ctx, model.QuarantineEntry{
 				RawID:          rawEvt.RawID,
 				RecordOrdinal:  decRec.RecordOrdinal,
 				RawSHA256:      rawEvt.RawSHA256,
@@ -512,9 +524,9 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 				RawPreview:     childPreview,
 				ReplayEligible: true,
 				QuarantinedAt:  time.Now().UTC(),
-			})
-			p.quarantined.Add(1)
-			p.pending.Add(-1)
+			}) {
+				unresolvedChild = true
+			}
 			continue
 		}
 
@@ -528,16 +540,26 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			storeErr = p.store.StoreNormalizedWithOutbox(ctx, normalized, destinations)
 		}
 		if storeErr != nil {
-			_ = p.store.Quarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "storage", Reason: "store_error", ErrorDetails: storeErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()})
-			p.quarantined.Add(1)
-			p.pending.Add(-1)
+			if !p.persistQuarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "storage", Reason: "store_error", ErrorDetails: storeErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()}) {
+				unresolvedChild = true
+			}
 			continue
 		}
 		if p.durableSink == nil {
 			if emitErr := p.sink.Emit(ctx, normalized); emitErr != nil {
-				_ = p.store.Quarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "output", Reason: "sink_error", ErrorDetails: emitErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()})
-				p.quarantined.Add(1)
-				p.pending.Add(-1)
+				if p.store == nil {
+					log.Printf("could not clear un-delivered normalized child %s/%d after sink failure: raw store is unavailable", rawEvt.RawID, decRec.RecordOrdinal)
+					unresolvedChild = true
+					continue
+				}
+				if deleteErr := p.store.DeleteNormalizedChild(ctx, rawEvt.RawID, decRec.RecordOrdinal); deleteErr != nil {
+					log.Printf("could not clear un-delivered normalized child %s/%d after sink failure: %v", rawEvt.RawID, decRec.RecordOrdinal, deleteErr)
+					unresolvedChild = true
+					continue
+				}
+				if !p.persistQuarantine(ctx, model.QuarantineEntry{RawID: rawEvt.RawID, RecordOrdinal: decRec.RecordOrdinal, RawSHA256: rawEvt.RawSHA256, Stage: "output", Reason: "sink_error", ErrorDetails: emitErr.Error(), RawPreview: childPreview, ReplayEligible: true, QuarantinedAt: time.Now().UTC()}) {
+					unresolvedChild = true
+				}
 				continue
 			}
 			p.delivered.Add(1)
@@ -548,16 +570,24 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			}
 		}
 
-		childNormalizedCount++
 		p.normalized.Add(1)
 		p.pending.Add(-1)
 	}
 
 	// BA-004: Derive parent status based on child outcomes
+	if unresolvedChild {
+		_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		return
+	}
+	normalizedCount, quarantinedCount, countErr := p.store.ChildOutcomeCounts(ctx, rawEvt.RawID)
+	if countErr != nil {
+		_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		return
+	}
 	finalStatus := model.StatusNormalized
-	if childNormalizedCount == 0 {
+	if normalizedCount == 0 && quarantinedCount > 0 {
 		finalStatus = model.StatusQuarantined
-	} else if childNormalizedCount < numChildren {
+	} else if quarantinedCount > 0 {
 		finalStatus = model.StatusPartial
 	}
 	if p.store != nil {
@@ -579,6 +609,21 @@ func (p *Pipeline) deliveryLoop() {
 		}
 	}
 }
+
+func (p *Pipeline) persistQuarantine(ctx context.Context, entry model.QuarantineEntry) bool {
+	if p.store == nil {
+		log.Printf("quarantine persistence failed for raw %s child %d: raw store is unavailable", entry.RawID, entry.RecordOrdinal)
+		return false
+	}
+	if err := p.store.Quarantine(ctx, entry); err != nil {
+		log.Printf("quarantine persistence failed for raw %s child %d: %v", entry.RawID, entry.RecordOrdinal, err)
+		return false
+	}
+	p.quarantined.Add(1)
+	p.pending.Add(-1)
+	return true
+}
+
 func (p *Pipeline) deliverPending() {
 	entries, err := p.outbox.FetchPending(p.ctx, 100)
 	if err != nil {
@@ -721,7 +766,6 @@ func (p *Pipeline) Stats() model.LossAccountingStats {
 		stats.Normalized, _ = p.store.CountNormalized(ctx)
 		stats.Quarantined, _ = p.store.CountQuarantine(ctx)
 		stats.Pending = p.pending.Load()
-		stats.Accepted = stats.Normalized + stats.Quarantined + stats.Pending
 	}
 	if p.outbox != nil && p.durableSink != nil {
 		stats.Delivered, _ = p.outbox.CountDistinctDelivered(context.Background())

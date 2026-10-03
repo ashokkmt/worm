@@ -44,6 +44,8 @@ curl -X POST http://127.0.0.1:8080/api/v1/ingest -H 'Content-Type: application/j
 
 The raw database defaults to `data/worm.db`; normalized NDJSON defaults to `data/output/normalized.ndjson`. Stop the foreground server with Ctrl+C. `web/dist/` is generated and must be built before compiling the CLI on a fresh clone. A routine local build reports a `dev-<commit>` version; no release-version flag is needed.
 
+Native listeners default to loopback (`127.0.0.1`) so they are not remotely reachable by default. If you bind to a public/interface address, review [SECURITY.md](SECURITY.md), set the available ingestion/admin tokens, and put the plain-HTTP management UI behind a trusted TLS proxy.
+
 For an entirely local, one-shot example without network listeners:
 
 ```sh

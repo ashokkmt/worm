@@ -40,7 +40,7 @@ type ConfigInfo struct {
 	DBPath     string `json:"db_path"`
 	Workers    int    `json:"workers"`
 	AirGapped  bool   `json:"air_gapped"`
-	AdminToken string `json:"admin_token,omitempty"`
+	AdminToken string `json:"-"`
 }
 
 // IngestTracker provides adapter operational status for health checks.
@@ -149,7 +149,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/stats", s.handleStats)
 	mux.HandleFunc("GET /api/v1/events", s.handleListEvents)
 	mux.HandleFunc("GET /api/v1/events/{id}", s.handleGetEvent)
-	mux.HandleFunc("GET /api/v1/events/{id}/trace", s.handleEventTrace)
+	mux.HandleFunc("GET /api/v1/events/{id}/trace", s.requireAdminAuth(s.handleEventTrace))
 	mux.HandleFunc("POST /api/v1/events/{id}/verify", s.handleVerifyEvent)
 	mux.HandleFunc("GET /api/v1/raw/{id}", s.requireAdminAuth(s.handleGetRaw))
 	mux.HandleFunc("POST /api/v1/raw/{id}/verify", s.requireAdminAuth(s.handleVerifyRaw))
@@ -165,7 +165,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/connections", s.handleListConnections)
 	mux.HandleFunc("GET /api/v1/connections/{name}", s.handleGetConnection)
 	mux.HandleFunc("POST /api/v1/connections/validate", s.handleValidateConnection)
-	mux.HandleFunc("POST /api/v1/connections/test", s.handleTestConnection)
+	mux.HandleFunc("POST /api/v1/connections/test", s.requireAdminAuth(s.handleTestConnection))
 	mux.HandleFunc("POST /api/v1/connections/apply", s.requireAdminAuth(s.handleApplyConnection))
 	mux.HandleFunc("POST /api/v1/connections/rollback", s.requireAdminAuth(s.handleRollbackConnection))
 	mux.HandleFunc("GET /api/v1/config", s.handleConfig)
@@ -173,7 +173,15 @@ func (s *Server) Handler() http.Handler {
 	// Static UI routing with SPA client-side fallback
 	mux.HandleFunc("/", s.handleStaticOrSPA)
 
-	return s.corsMiddleware(mux)
+	return s.corsMiddleware(limitRequestBody(mux))
+}
+
+// limitRequestBody applies one shared bound to every management API body.
+func limitRequestBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Start opens the network listener and serves HTTP requests.

@@ -529,4 +529,37 @@ func TestAPI_AdminTokenAuth_BA023(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 Not Found with Bearer token, got %d", rec.Code)
 	}
+
+	// Config must never publish the authorization secret.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/config", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "super-secret-admin-token") || strings.Contains(rec.Body.String(), "admin_token") {
+		t.Fatalf("config response exposed an admin token: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Trace includes raw bytes and must use the same authorization boundary as /raw.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/events/event/trace", nil)
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected trace request to require auth, got %d", rec.Code)
+	}
+
+	// Connectivity probes can reach network/filesystem targets, so require auth.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/connections/test", strings.NewReader(`{"yaml_content":""}`))
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected connection test to require auth, got %d", rec.Code)
+	}
+
+	// Shared management request limit rejects oversized JSON before decoding it.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/connections/test", strings.NewReader(`{"yaml_content":"`+strings.Repeat("x", (1<<20)+1)+`"}`))
+	req.Header.Set("Authorization", "Bearer super-secret-admin-token")
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected oversized body to be rejected, got %d", rec.Code)
+	}
 }

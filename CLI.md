@@ -4,7 +4,7 @@ Run commands from the repository root or an extracted Release directory so the d
 
 ## Startup flags
 
-`worm` without a management subcommand starts the processing engine. Listener addresses such as `:8080` bind all interfaces; prefer `127.0.0.1:8080` for a local-only test. `none` disables the indicated optional listener/output, but see each row for its exact behavior.
+`worm` without a management subcommand starts the processing engine. Network listeners bind to loopback by default; specify an explicit address such as `0.0.0.0:8080` only when remote access is intended. Management HTTP is not TLS, so use a trusted TLS-terminating proxy before exposing it. `none` disables the indicated optional listener/output, but see each row for its exact behavior.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -16,19 +16,19 @@ Run commands from the repository root or an extracted Release directory so the d
 | `-file <path>` | off | Ingest one file at startup. If other listeners and enabled sources are disabled, WORM drains the pipeline, prints final accounting, and exits; otherwise the server continues running. |
 | `-stdin` | `false` | Read records from standard input. A pipe is detected automatically; use the flag to request stdin explicitly. |
 | `-stdin-framing line\|ndjson\|document` | `line` | `line` and `ndjson` currently submit each nonempty line as one record; `document` submits the entire bounded stream as one payload, useful for multiline JSON/XML/CSV. Detection and decoding happen afterward. |
-| `-syslog-udp <addr>` | `:514` | Plaintext Syslog UDP listener (best effort). Use `:1514` for a non-privileged local demo or `none` to disable. |
-| `-syslog-tcp <addr>` | `:514` | Plaintext Syslog TCP listener with newline and octet-counted framing. Use `:1514` for a non-privileged demo or `none` to disable. |
+| `-syslog-udp <addr>` | `127.0.0.1:1514` | Plaintext Syslog UDP listener (best effort). Use an explicit all-interface address for remote senders, or `none` to disable. |
+| `-syslog-tcp <addr>` | `127.0.0.1:1514` | Plaintext Syslog TCP listener with newline and octet-counted framing. Use an explicit all-interface address for remote senders, or `none` to disable. |
 | `-syslog-tls <addr>` | `none` | Opt-in encrypted Syslog TLS listener. Requires `-tls-cert` and `-tls-key`; use a suitable unprivileged port such as `:7514`. |
 | `-tls-cert <path>` | unset | PEM X.509 server certificate for `-syslog-tls`. |
 | `-tls-key <path>` | unset | Matching private key for `-syslog-tls`. Keep it out of the repository. |
 | `-tls-client-ca <path>` | unset | Optional PEM client CA. If supplied, the TLS listener requires and verifies client certificates (mTLS). |
-| `-http <addr>` | `:8080` | HTTP intake listener: `POST /api/v1/ingest` and `GET /api/v1/health`. Use `none` to disable. This is separate from the management UI/API. |
+| `-http <addr>` | `127.0.0.1:8080` | HTTP intake listener: `POST /api/v1/ingest` and `GET /api/v1/health`. Use an explicit all-interface address for remote senders and configure `-http-key`; or use `none` to disable. This is separate from the management UI/API. |
 | `-http-key <token>` | unset | Require `X-WORM-Key: <token>` or `Authorization: Bearer <token>` on HTTP ingest POSTs. Keep tokens out of checked-in files and shell history. |
 | `-inbox <dir>` | `data/inbox` | Watch a spool directory for dropped files; WORM uses `processing/`, `processed/`, and `failed/` subdirectories. Use `none` to disable. |
 | `-output-file <path>` | `data/output/normalized.ndjson` | Write normalized events as line-delimited JSON. Use `none` to disable this file sink. |
 | `-stdout[=true\|false]` | `true` | Stream normalized JSON to stdout. `-stdout=false` suppresses it; the database and other configured outputs remain active. |
-| `-ui <addr>` | `:9090` | Management web UI and control-plane API listener, for example `-ui 127.0.0.1:9090` then open `http://127.0.0.1:9090`. `none` disables the UI/API; live apply and replay commands then cannot contact it. |
-| `-admin-token <token>` | unset | Optional token for protected control-plane mutation routes. **Do not treat this as a complete security boundary in the current release**; see [SECURITY.md](SECURITY.md). |
+| `-ui <addr>` | `127.0.0.1:9090` | Management web UI and control-plane API listener, for example `-ui 127.0.0.1:9090` then open `http://127.0.0.1:9090`. Use a TLS-terminating proxy before remote exposure. `none` disables the UI/API; live apply and replay commands then cannot contact it. |
+| `-admin-token <token>` | unset | Token for protected control-plane routes, including raw traces and connection tests. Supply the token in the UI's session-only field or send `Authorization: Bearer <token>` / `X-WORM-Admin-Key`. Avoid shell history; see [SECURITY.md](SECURITY.md). |
 | `-d` | `false` | Detach into a child process, write PID to `data/worm.pid`, append logs to `data/worm.log`, and return the terminal. The child gets the other startup flags. |
 | `-stop` | `false` | Stop the detached process identified by `data/worm.pid`. `worm stop` and `worm --stop` are aliases. |
 | `-status` | `false` | Show detached-process status and a management health probe. `worm status` and `worm --status` are aliases; the verb form probes the default `:9090`. |

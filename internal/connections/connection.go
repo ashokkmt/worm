@@ -286,11 +286,11 @@ func (c *Connection) TestConnectivityDetailed(ctx context.Context) (Connectivity
 		}
 		resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 		if err != nil {
-			return ConnectivityResult{}, fmt.Errorf("HTTP handshake failed: %w", err)
+			return ConnectivityResult{}, fmt.Errorf("http handshake failed: %w", err)
 		}
 		resp.Body.Close()
 		if resp.StatusCode >= 500 {
-			return ConnectivityResult{}, fmt.Errorf("HTTP endpoint returned %s", resp.Status)
+			return ConnectivityResult{}, fmt.Errorf("http endpoint returned %s", resp.Status)
 		}
 		return ConnectivityResult{"protocol_verified", "HTTP response " + resp.Status}, nil
 	case "kafka_output", "kafka_input":
@@ -300,7 +300,7 @@ func (c *Connection) TestConnectivityDetailed(ctx context.Context) (Connectivity
 		}
 		defer client.Close()
 		if err := client.Ping(ctx); err != nil {
-			return ConnectivityResult{}, fmt.Errorf("Kafka metadata handshake failed: %w", err)
+			return ConnectivityResult{}, fmt.Errorf("kafka metadata handshake failed: %w", err)
 		}
 		return ConnectivityResult{"protocol_verified", "Kafka metadata handshake completed"}, nil
 	case "parquet_output", "ndjson_output":
@@ -331,7 +331,7 @@ func (c *Connection) TestConnectivityDetailed(ctx context.Context) (Connectivity
 		d := tls.Dialer{Config: &tls.Config{MinVersion: tls.VersionTLS12}}
 		conn, err := d.DialContext(ctx, "tcp", host)
 		if err != nil {
-			return ConnectivityResult{}, fmt.Errorf("TLS handshake failed: %w", err)
+			return ConnectivityResult{}, fmt.Errorf("tls handshake failed: %w", err)
 		}
 		conn.Close()
 		return ConnectivityResult{"protocol_verified", "TLS handshake completed"}, nil

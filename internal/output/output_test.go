@@ -226,6 +226,34 @@ func TestHTTPSIEMSink_Deliver(t *testing.T) {
 	}
 }
 
+func TestDynamicSinkFlushesBufferedDestinationBeforeAcknowledging(t *testing.T) {
+	received := make(chan []byte, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := io.ReadAll(r.Body)
+		received <- data
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	sink := output.NewHTTPSIEMSink(output.HTTPOutputConfig{URL: server.URL, BatchEvents: 100, FlushInterval: time.Hour})
+	dynamic := output.NewDynamicSink()
+	if err := dynamic.Replace(map[string]output.OutputSink{"http": sink}); err != nil {
+		t.Fatal(err)
+	}
+	defer dynamic.Close()
+	if err := dynamic.EmitTo(context.Background(), "http", sampleEvent("durable-http-event")); err != nil {
+		t.Fatalf("EmitTo should return only after successful flush: %v", err)
+	}
+	select {
+	case payload := <-received:
+		if !bytes.Contains(payload, []byte("durable-http-event")) {
+			t.Fatalf("flushed payload omitted event: %s", payload)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("EmitTo acknowledged before sending buffered event")
+	}
+}
+
 func TestKafkaSink_Deliver(t *testing.T) {
 	memProducer := output.NewMemoryKafkaProducer()
 	cfg := output.KafkaOutputConfig{
@@ -313,5 +341,44 @@ func TestParquetSink_PartitionAndManifest(t *testing.T) {
 		if string(fileData[:4]) != "PAR1" || string(fileData[len(fileData)-4:]) != "PAR1" {
 			t.Errorf("file %s missing PAR1 magic header/footer", fullPath)
 		}
+	}
+}
+
+func TestParquetFlushFailureRetainsBufferedRows(t *testing.T) {
+	root := t.TempDir()
+	blocker := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("block"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sink := output.NewParquetSink(output.ParquetOutputConfig{Path: blocker, MaxRowsPerFile: 10})
+	if err := sink.Emit(context.Background(), sampleEvent("retry-parquet-row")); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Flush(); err == nil {
+		t.Fatal("expected initial flush to fail while output path is a file")
+	}
+	if err := os.Remove(blocker); err != nil {
+		t.Fatal(err)
+	}
+	if err := sink.Flush(); err != nil {
+		t.Fatalf("buffered rows should survive failed flush: %v", err)
+	}
+	if err := sink.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var files int
+	if err := filepath.WalkDir(blocker, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !entry.IsDir() && filepath.Ext(path) == ".parquet" {
+			files++
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if files != 1 {
+		t.Fatalf("expected exactly one parquet file after retry, got %d", files)
 	}
 }

@@ -25,7 +25,14 @@ func (d *DynamicSink) EmitTo(ctx context.Context, name string, e *model.Normaliz
 	if !ok {
 		return fmt.Errorf("destination %q is not active", name)
 	}
-	return s.Emit(ctx, e)
+	if err := s.Emit(ctx, e); err != nil {
+		return err
+	}
+	flusher, ok := s.(interface{ Flush() error })
+	if !ok {
+		return fmt.Errorf("destination %q does not support durable flush", name)
+	}
+	return flusher.Flush()
 }
 func (d *DynamicSink) Names() []string {
 	d.mu.RLock()

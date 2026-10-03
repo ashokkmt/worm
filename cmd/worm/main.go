@@ -275,13 +275,13 @@ func main() {
 	replayAllFlag := flag.Bool("replay-all", false, "Replay all quarantined DLQ records")
 
 	// Multi-transport ingestion flags
-	syslogUDP := flag.String("syslog-udp", ":514", "UDP address for Syslog listener (:1514 for non-root, 'none' to disable)")
-	syslogTCP := flag.String("syslog-tcp", ":514", "TCP address for Syslog listener (:1514 for non-root, 'none' to disable)")
+	syslogUDP := flag.String("syslog-udp", "127.0.0.1:1514", "UDP address for Syslog listener (loopback by default; use an explicit public bind for remote senders, 'none' to disable)")
+	syslogTCP := flag.String("syslog-tcp", "127.0.0.1:1514", "TCP address for Syslog listener (loopback by default; use an explicit public bind for remote senders, 'none' to disable)")
 	syslogTLS := flag.String("syslog-tls", "none", "TCP address for Syslog TLS (RFC 5425) listener (:7514 for non-root, 'none' to disable)")
 	tlsCert := flag.String("tls-cert", "", "Path to X.509 certificate file for Syslog TLS")
 	tlsKey := flag.String("tls-key", "", "Path to private key file for Syslog TLS")
 	tlsClientCA := flag.String("tls-client-ca", "", "Path to optional client CA file for Syslog TLS mutual authentication (mTLS)")
-	httpAddr := flag.String("http", ":8080", "HTTP address for REST ingestion ('none' to disable)")
+	httpAddr := flag.String("http", "127.0.0.1:8080", "HTTP address for REST ingestion (loopback by default; use an explicit public bind for remote senders, 'none' to disable)")
 	httpKey := flag.String("http-key", "", "Optional API key for HTTP POST authentication")
 	inboxDir := flag.String("inbox", "data/inbox", "Path to monitored spool inbox directory ('none' to disable)")
 	inputFile := flag.String("file", "", "One-shot batch file to ingest immediately")
@@ -291,7 +291,7 @@ func main() {
 	stdoutOutput := flag.Bool("stdout", true, "Emit normalized NDJSON events to stdout")
 
 	// Management UI and Control Plane flag
-	uiAddr := flag.String("ui", ":9090", "Address for Management Web UI and Control Plane API (:9090 default, 'none' to disable)")
+	uiAddr := flag.String("ui", "127.0.0.1:9090", "Address for Management Web UI and Control Plane API (loopback by default; use TLS termination before public exposure, 'none' to disable)")
 	adminToken := flag.String("admin-token", "", "Optional secret token for authenticating control-plane mutation API routes")
 
 	flag.Parse()
@@ -546,7 +546,7 @@ func main() {
 		if err := uiServer.Start(); err != nil {
 			fmt.Fprintf(os.Stderr, "WARNING: Failed to start Management UI on %s: %v\n", *uiAddr, err)
 		} else {
-			fmt.Fprintf(os.Stderr, " Management Control Plane & UI active: http://localhost%s\n", *uiAddr)
+			fmt.Fprintf(os.Stderr, " Management Control Plane & UI active: http://%s\n", *uiAddr)
 		}
 	}
 

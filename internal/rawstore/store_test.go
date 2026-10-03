@@ -3,6 +3,7 @@ package rawstore
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -27,6 +28,10 @@ func setupTestStore(t *testing.T) *RawStore {
 func TestStoreAndRetrieveLossless(t *testing.T) {
 	store := setupTestStore(t)
 	ctx := context.Background()
+	var synchronous int
+	if err := store.DB().QueryRowContext(ctx, "PRAGMA synchronous").Scan(&synchronous); err != nil || synchronous != 2 {
+		t.Fatalf("expected SQLite synchronous=FULL (2), got %d (err=%v)", synchronous, err)
+	}
 
 	originalBytes := []byte("<14>1 2026-09-20T10:05:23+05:30 pa-fw-01 paloalto - TRAFFIC - vendor_product=PAN-OS action=allow")
 	rec := model.IngestedRecord{
@@ -459,5 +464,121 @@ func TestBatchChildrenAndSourcePort(t *testing.T) {
 	}
 	if gotQ.RecordOrdinal != 2 {
 		t.Errorf("expected RecordOrdinal 2, got %d", gotQ.RecordOrdinal)
+	}
+}
+
+func TestStoreDeduplicatesRecoveredFileSpoolCoordinates(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	rec := model.IngestedRecord{Transport: "file", RawBytes: []byte("line one"), Metadata: model.ReceiveMetadata{FileID: "file-fingerprint", FileOffset: 0}}
+	first, err := store.Store(ctx, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := store.Store(ctx, rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !second.Duplicate || second.RawID != first.RawID {
+		t.Fatalf("expected duplicate existing row, first=%+v second=%+v", first, second)
+	}
+	count, err := store.CountRaw(ctx)
+	if err != nil || count != 1 {
+		t.Fatalf("expected one raw row, got %d (err=%v)", count, err)
+	}
+	rec.RawBytes = []byte("changed bytes")
+	if _, err := store.Store(ctx, rec); err == nil {
+		t.Fatal("expected changed bytes at an existing file coordinate to be rejected")
+	}
+}
+
+func TestMigrateLegacySchemaTransactionallyAndIdempotently(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "legacy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	legacy := `
+CREATE TABLE raw_events(raw_id TEXT PRIMARY KEY, raw_sha256 TEXT NOT NULL, byte_count INTEGER NOT NULL, transport TEXT NOT NULL, source_ip TEXT NOT NULL, received_at TEXT NOT NULL, payload BLOB NOT NULL, status TEXT NOT NULL);
+CREATE TABLE quarantine(quarantine_id TEXT PRIMARY KEY, raw_id TEXT NOT NULL, raw_sha256 TEXT NOT NULL, stage TEXT NOT NULL, reason TEXT NOT NULL, error_details TEXT, raw_preview TEXT NOT NULL, candidate_packs TEXT, replay_eligible INTEGER NOT NULL, quarantined_at TEXT NOT NULL, replayed_at TEXT);
+CREATE TABLE normalized_events(event_id TEXT PRIMARY KEY, raw_id TEXT NOT NULL, source_category TEXT NOT NULL, source_id TEXT NOT NULL, severity_id TEXT, activity_name TEXT, message TEXT, event_time INTEGER NOT NULL, received_time TEXT NOT NULL, event_json TEXT NOT NULL, event_sha256 TEXT NOT NULL DEFAULT '');
+PRAGMA user_version=1;`
+	if _, err := db.Exec(legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := initSchema(db); err != nil {
+		t.Fatalf("migrate legacy schema: %v", err)
+	}
+	if err := initSchema(db); err != nil {
+		t.Fatalf("repeat migration: %v", err)
+	}
+	var version int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil || version != CurrentSchemaVersion {
+		t.Fatalf("user_version=%d err=%v", version, err)
+	}
+	for _, col := range []string{"source_port", "metadata_json"} {
+		var count int
+		if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('raw_events') WHERE name=?", col).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("expected raw_events.%s after migration, count=%d err=%v", col, count, err)
+		}
+	}
+}
+
+func TestMigrationFailureDoesNotAdvanceOrPartiallyApply(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "broken-legacy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	legacy := `
+CREATE TABLE raw_events(raw_id TEXT PRIMARY KEY, raw_sha256 TEXT NOT NULL, byte_count INTEGER NOT NULL, transport TEXT NOT NULL, source_ip TEXT NOT NULL, source_port INTEGER NOT NULL DEFAULT 0, received_at TEXT NOT NULL, payload BLOB NOT NULL, status TEXT NOT NULL);
+CREATE TABLE quarantine(quarantine_id TEXT PRIMARY KEY, raw_id TEXT NOT NULL, record_ordinal INTEGER NOT NULL DEFAULT 0, raw_sha256 TEXT NOT NULL, stage TEXT NOT NULL, reason TEXT NOT NULL, error_details TEXT, raw_preview TEXT NOT NULL, candidate_packs TEXT, replay_eligible INTEGER NOT NULL, quarantined_at TEXT NOT NULL, replayed_at TEXT);
+CREATE TABLE normalized_events(event_id TEXT PRIMARY KEY, raw_id TEXT NOT NULL, source_category TEXT NOT NULL, source_id TEXT NOT NULL, severity_id TEXT, activity_name TEXT, message TEXT, event_time INTEGER NOT NULL, received_time TEXT NOT NULL, event_json TEXT NOT NULL, event_sha256 TEXT NOT NULL DEFAULT '');
+PRAGMA user_version=1;`
+	if _, err := db.Exec(legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := initSchema(db); err == nil {
+		t.Fatal("expected migration to fail on inconsistent v1 schema")
+	}
+	var version, sourcePortCount int
+	if err := db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM pragma_table_info('raw_events') WHERE name='source_port'").Scan(&sourcePortCount); err != nil {
+		t.Fatal(err)
+	}
+	if version != 1 || sourcePortCount != 1 {
+		t.Fatalf("failed migration changed schema/version unexpectedly: version=%d source_port_count=%d", version, sourcePortCount)
+	}
+}
+
+func TestReplayUpdatesNormalizedProjectionColumns(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	raw, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte("raw")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := &model.NormalizedEvent{Worm: model.WormEnvelope{EventID: "event-old", RawID: raw.RawID, RecordOrdinal: 0, SourceCategory: "old-category", SourceID: "old-source", ReceivedTime: time.Unix(1, 0).UTC()}, OCSF: map[string]any{"time": int64(1000), "severity_id": 1, "activity_name": "old-activity", "message": "old-message"}}
+	if err := store.StoreNormalized(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	event.Worm.SourceCategory = "new-category"
+	event.Worm.SourceID = "new-source"
+	event.Worm.ReceivedTime = time.Unix(2, 0).UTC()
+	event.OCSF = map[string]any{"time": int64(2000), "severity_id": 5, "activity_name": "new-activity", "message": "new-message"}
+	if err := store.StoreNormalized(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	var category, sourceID, severity, activity, message, received string
+	var eventTime int64
+	err = store.db.QueryRow(`SELECT source_category,source_id,severity_id,activity_name,message,event_time,received_time
+		FROM normalized_events WHERE raw_id=? AND record_ordinal=0`, raw.RawID).Scan(&category, &sourceID, &severity, &activity, &message, &eventTime, &received)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if category != "new-category" || sourceID != "new-source" || severity != "5" || activity != "new-activity" || message != "new-message" || eventTime != 2000 || received != event.Worm.ReceivedTime.Format(time.RFC3339Nano) {
+		t.Fatalf("replay projection columns are stale: category=%q source=%q severity=%q activity=%q message=%q time=%d received=%q", category, sourceID, severity, activity, message, eventTime, received)
 	}
 }

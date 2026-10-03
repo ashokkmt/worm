@@ -31,6 +31,7 @@ type HTTPSIEMSink struct {
 	cfg      HTTPOutputConfig
 	client   *http.Client
 	mu       sync.Mutex
+	flushMu  sync.Mutex
 	buffer   []*model.NormalizedEvent
 	stopOnce sync.Once
 	stop     chan struct{}
@@ -96,6 +97,12 @@ func (s *HTTPSIEMSink) Emit(ctx context.Context, event *model.NormalizedEvent) e
 		return fmt.Errorf("http sink is closed")
 	}
 
+	for _, queued := range s.buffer {
+		if queued.Worm.EventID == event.Worm.EventID {
+			s.mu.Unlock()
+			return nil
+		}
+	}
 	s.buffer = append(s.buffer, event)
 	readyToFlush := len(s.buffer) >= s.cfg.BatchEvents
 	s.mu.Unlock()
@@ -109,6 +116,9 @@ func (s *HTTPSIEMSink) Emit(ctx context.Context, event *model.NormalizedEvent) e
 
 // Flush sends all buffered events to the configured HTTP SIEM endpoint.
 func (s *HTTPSIEMSink) flushContext(ctx context.Context) error {
+	s.flushMu.Lock()
+	defer s.flushMu.Unlock()
+
 	s.mu.Lock()
 	if len(s.buffer) == 0 {
 		s.mu.Unlock()
