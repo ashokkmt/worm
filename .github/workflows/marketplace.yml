@@ -3,7 +3,7 @@ name: Publish parser marketplace
 on:
   push:
     branches: [main]
-    paths: ["packs/*.yaml", "marketplace/metadata.json", "marketplace/releases/**", "cmd/marketplace/**", "internal/marketplace/**"]
+    paths: ["packs/*.yaml", "marketplace/metadata.json", "marketplace/releases/**", "cmd/marketplace/**", "internal/marketplace/**", "README.md", "CLI.md", "SECURITY.md", "benchmarking.md", "assets/**", "scripts/build-release.*"]
   workflow_dispatch:
 
 permissions:
@@ -40,9 +40,21 @@ jobs:
         env:
           WORM_MARKETPLACE_SIGNING_KEY: ${{ secrets.WORM_MARKETPLACE_SIGNING_KEY }}
         run: go run ./cmd/marketplace -packs packs -metadata marketplace/metadata.json -out internal/marketplace/catalog.json -site marketplace-site
+      - name: Add README homepage and its referenced files
+        run: |
+          { printf '%s\n' '---' '---' ''; cat README.md; } > marketplace-site/index.md
+          cp CLI.md SECURITY.md benchmarking.md marketplace-site/
+          mkdir -p marketplace-site/assets marketplace-site/scripts
+          cp assets/worm-logo.webp assets/worm-thumbnail-video.png marketplace-site/assets/
+          cp scripts/build-release.sh scripts/build-release.ps1 marketplace-site/scripts/
+      - name: Render README as the Pages homepage
+        uses: actions/jekyll-build-pages@v1
+        with:
+          source: ./marketplace-site
+          destination: ./_site
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: marketplace-site/
+          path: ./_site/
 
   deploy:
     needs: build
