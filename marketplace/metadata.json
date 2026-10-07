@@ -1,0 +1,134 @@
+{
+  "packs": {
+    "app-payment-gateway": {
+      "product": "E-Commerce Payment Gateway",
+      "tags": ["payments", "application"]
+    },
+    "appliance-proprietary-text": {
+      "product": "Proprietary hardware appliance",
+      "tags": ["appliance", "health"]
+    },
+    "cloud-audit": {
+      "product": "Vendor-neutral cloud management and API audit events",
+      "tags": ["cloud", "audit"]
+    },
+    "container-runtime": {
+      "product": "Container runtime",
+      "tags": ["container", "runtime"]
+    },
+    "database-audit": {
+      "product": "PostgreSQL and MySQL database audit logs",
+      "tags": ["database", "audit"]
+    },
+    "endpoint-ids-alert": {
+      "product": "Suricata and Snort IDS alerts",
+      "tags": ["ids", "intrusion-detection"]
+    },
+    "iam-auth-leef": {
+      "product": "Identity and access management authentication",
+      "tags": ["identity", "authentication"]
+    },
+    "iot-gateway-xml": {
+      "product": "Industrial IoT gateway",
+      "tags": ["iot", "gateway"]
+    },
+    "network-device-asa": {
+      "vendor": "Cisco",
+      "product": "ASA",
+      "tags": ["network", "firewall"]
+    },
+    "network-device-firewall": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS",
+      "tags": ["network", "firewall"]
+    },
+    "network-perimeter-leef": {
+      "product": "NextGenFW perimeter firewall",
+      "tags": ["network", "firewall"]
+    },
+    "network-perimeter-xml": {
+      "product": "Perimeter security appliance intrusion alerts",
+      "tags": ["network", "security"]
+    },
+    "os-linux-auth": {
+      "product": "Linux system and SSH authentication",
+      "tags": ["linux", "ssh", "authentication"]
+    },
+    "server-webaccess": {
+      "product": "Nginx and Apache web access logs",
+      "tags": ["web", "access"]
+    }
+  },
+  "releases": {
+    "app-payment-gateway@1.0.1": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["json"]
+    },
+    "appliance-proprietary-text@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["text"]
+    },
+    "cloud-audit@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["json"]
+    },
+    "container-runtime@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["json"]
+    },
+    "database-audit@1.0.1": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["csv"]
+    },
+    "endpoint-ids-alert@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["cef"]
+    },
+    "iam-auth-leef@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["leef"]
+    },
+    "iot-gateway-xml@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["xml"]
+    },
+    "network-device-asa@1.0.3": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["syslog"]
+    },
+    "network-device-firewall@1.0.5": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["syslog"]
+    },
+    "network-perimeter-leef@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["leef"]
+    },
+    "network-perimeter-xml@1.0.0": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["xml"]
+    },
+    "os-linux-auth@1.0.2": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["syslog"]
+    },
+    "server-webaccess@1.0.1": {
+      "changelog": "Initial marketplace listing of the existing WORM parser pack.",
+      "withdrawn": false,
+      "required_decoders": ["text"]
+    }
+  }
+}

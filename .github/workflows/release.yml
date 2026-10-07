@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*.*.*'
+      - 'v*.*.*-beta.*'
 
 permissions:
   contents: read
@@ -22,6 +23,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Verify bundled parser catalog matches shipped packs
+        run: go run ./cmd/marketplace -check-packs packs
       - name: Build embedded UI
         run: |
           npm ci --prefix web
@@ -73,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
-          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Tag must be vMAJOR.MINOR.PATCH' >&2; exit 1; }
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]] || { echo 'Tag must be vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-beta.NUMBER' >&2; exit 1; }
           os='${{ matrix.goos }}'
           arch='${{ matrix.goarch }}'
           stage="dist/${tag}/worm-${tag}-${os}-${arch}"
@@ -119,4 +122,14 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "dist/$GITHUB_REF_NAME"/*.tar.gz "dist/$GITHUB_REF_NAME/SHA256SUMS" --verify-tag --generate-notes
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if [[ "$tag" =~ -beta\.[0-9]+$ ]]; then
+            gh release create "$tag" "dist/$tag"/*.tar.gz "dist/$tag/SHA256SUMS" \
+              --verify-tag --prerelease --title "$tag (beta)" \
+              --notes "This beta release is not yet fully working. Please refer to the non-beta version only."
+          else
+            gh release create "$tag" "dist/$tag"/*.tar.gz "dist/$tag/SHA256SUMS" \
+              --verify-tag --generate-notes
+          fi

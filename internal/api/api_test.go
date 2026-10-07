@@ -112,7 +112,7 @@ func TestAPI_HealthAndStats(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&health); err != nil {
 		t.Fatalf("failed to decode health: %v", err)
 	}
-	if health["status"] != "ok" || health["air_gapped"] != true || health["version"] != "test-version" {
+	if health["status"] != "ok" || health["air_gapped"] != false || health["marketplace_online"] != false || health["version"] != "test-version" {
 		t.Fatalf("invalid health response: %+v", health)
 	}
 
@@ -352,6 +352,7 @@ func TestAPI_QuarantineReplayAll(t *testing.T) {
 }
 
 func TestAPI_PathTraversalBlocked(t *testing.T) {
+	t.Setenv("WORM_ADMIN_TOKEN", "test-admin-token")
 	srv, store, pipe, tempDir := setupTestServer(t)
 	defer os.RemoveAll(tempDir)
 	defer store.Close()
@@ -384,6 +385,7 @@ spec:
 	}
 	body, _ := json.Marshal(maliciousPayload)
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/packs/activate", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-admin-token")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -561,5 +563,31 @@ func TestAPI_AdminTokenAuth_BA023(t *testing.T) {
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected oversized body to be rejected, got %d", rec.Code)
+	}
+}
+
+func TestMarketplaceCatalogAndProtectedRefresh(t *testing.T) {
+	srv, store, pipe, _ := setupTestServer(t)
+	defer store.Close()
+	pipe.Stop()
+	get := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/v1/marketplace/packs?q=network", nil))
+	if get.Code != http.StatusOK {
+		t.Fatalf("marketplace search status = %d: %s", get.Code, get.Body.String())
+	}
+	var result struct {
+		Packs []map[string]any `json:"packs"`
+		Total int              `json:"total"`
+	}
+	if err := json.Unmarshal(get.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Total == 0 || len(result.Packs) == 0 {
+		t.Fatal("expected matching signed catalog entries")
+	}
+	refresh := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(refresh, httptest.NewRequest(http.MethodPost, "/api/v1/marketplace/refresh", nil))
+	if refresh.Code != http.StatusForbidden {
+		t.Fatalf("unauthenticated refresh status = %d, want 403", refresh.Code)
 	}
 }

@@ -90,7 +90,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, stats: propSta
             System Telemetry &amp; Loss Ledger
           </h1>
           <p className="text-xs font-mono text-[#8b949e] mt-1">
-            Real-time pipeline accounting, cryptographic verification, and air-gapped stream metrics.
+            Real-time pipeline accounting, cryptographic verification, and adapter health metrics.
           </p>
         </div>
         <div className="flex items-center space-x-3 shrink-0">

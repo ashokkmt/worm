@@ -117,6 +117,24 @@ func main() {
 			}
 			cli.ListSourcesCLI(":9090", srcDir)
 			return
+		case "marketplace", "-marketplace", "--marketplace":
+			packsDir, uiAddr := "packs", ":9090"
+			for i, a := range os.Args {
+				if i+1 < len(os.Args) {
+					if a == "--packs-dir" {
+						packsDir = os.Args[i+1]
+					}
+					if a == "--ui" {
+						uiAddr = os.Args[i+1]
+					}
+					if a == "--admin-token" {
+						cli.SetMarketplaceAdminToken(os.Args[i+1])
+					}
+				}
+			}
+			os.Args = append([]string{os.Args[0], os.Args[1]}, stripCommandOptions(os.Args[2:], false)...)
+			cli.MarketplaceCLI(os.Args[2:], packsDir, uiAddr)
+			return
 		case "sinks", "-sinks", "--sinks":
 			sinkDir := "sinks"
 			for i, a := range os.Args {
@@ -173,12 +191,28 @@ func main() {
 			return
 
 		case "packs", "-packs", "--packs":
-			pDir := "packs"
+			pDir, uiAddr, local, marketplaceOnline, registryURL := "packs", ":9090", false, false, "https://ashokkmt.github.io/worm"
 			for i, a := range os.Args {
 				if (a == "-packs-dir" || a == "--packs-dir") && i+1 < len(os.Args) {
 					pDir = os.Args[i+1]
 				}
+				if a == "--admin-token" && i+1 < len(os.Args) {
+					cli.SetMarketplaceAdminToken(os.Args[i+1])
+				}
+				if a == "--ui" && i+1 < len(os.Args) {
+					uiAddr = os.Args[i+1]
+				}
+				if a == "--local" {
+					local = true
+				}
+				if a == "--marketplace-online" {
+					marketplaceOnline = true
+				}
+				if a == "--marketplace-url" && i+1 < len(os.Args) {
+					registryURL = os.Args[i+1]
+				}
 			}
+			os.Args = append([]string{os.Args[0], os.Args[1]}, stripCommandOptions(os.Args[2:], true)...)
 			if len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
 				sub := os.Args[2]
 				switch sub {
@@ -210,21 +244,88 @@ func main() {
 				case "apply":
 					for i, a := range os.Args {
 						if (a == "-f" || a == "--f") && i+1 < len(os.Args) {
-							cli.ApplyPackCLI(os.Args[i+1], ":9090", pDir)
+							if local {
+								cli.ApplyPackLocalCLI(os.Args[i+1], pDir)
+							} else {
+								cli.ApplyPackCLI(os.Args[i+1], uiAddr, pDir)
+							}
 							return
 						}
 					}
-					fmt.Fprintln(os.Stderr, "Usage: worm packs apply -f <file.yaml>")
+					fmt.Fprintln(os.Stderr, "Usage: worm packs apply -f <file.yaml> [--local]")
+					return
+				case "install":
+					if len(os.Args) >= 4 {
+						parts := strings.SplitN(os.Args[3], "@", 2)
+						version := "latest"
+						if len(parts) == 2 {
+							version = parts[1]
+						}
+						if local {
+							cli.InstallMarketplacePackLocalCLI(parts[0], version, pDir)
+						} else {
+							cli.InstallMarketplacePackCLI(parts[0], version, uiAddr)
+						}
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs install <name>[@version]")
+					return
+				case "remove":
+					if len(os.Args) >= 4 {
+						if local {
+							cli.RemoveMarketplacePackLocalCLI(os.Args[3], pDir)
+						} else {
+							cli.RemoveMarketplacePackCLI(os.Args[3], uiAddr)
+						}
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs remove <name>")
+					return
+				case "fetch":
+					if len(os.Args) >= 4 {
+						if local {
+							name, version, hasVersion := strings.Cut(os.Args[3], "@")
+							v := "latest"
+							if hasVersion {
+								v = version
+							}
+							cli.FetchMarketplacePackLocalCLI(name, v, pDir, registryURL, marketplaceOnline)
+						} else {
+							cli.MarketplaceCLI([]string{"fetch", os.Args[3]}, pDir, uiAddr)
+						}
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs fetch <name>[@version]")
+					return
+				case "upgrade":
+					if len(os.Args) >= 4 {
+						if local {
+							if os.Args[3] == "--all" {
+								fmt.Fprintln(os.Stderr, "ERROR: --local --all upgrade is not supported; upgrade packs individually")
+								os.Exit(2)
+							}
+							cli.UpgradeMarketplacePackLocalCLI(os.Args[3], pDir)
+						} else if os.Args[3] == "--all" {
+							cli.UpgradeAllMarketplacePacksCLI(uiAddr, pDir)
+						} else {
+							cli.UpgradeMarketplacePackCLI(os.Args[3], uiAddr, pDir)
+						}
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Usage: worm packs upgrade <name>")
+					return
+				case "outdated":
+					cli.ListOutdatedMarketplacePacksCLI(uiAddr, pDir)
 					return
 				case "rollback":
-					cli.RollbackPackCLI(":9090", pDir)
+					cli.RollbackPackCLI(uiAddr, pDir, local)
 					return
 				case "list":
-					cli.ListPacksCLI(":9090", pDir)
+					cli.ListPacksCLI(uiAddr, pDir)
 					return
 				case "get":
 					if len(os.Args) >= 4 {
-						cli.GetPackCLI(os.Args[3], ":9090", pDir)
+						cli.GetPackCLI(os.Args[3], uiAddr, pDir)
 						return
 					}
 					fmt.Fprintln(os.Stderr, "Usage: worm packs get <name>")
@@ -293,6 +394,8 @@ func main() {
 	// Management UI and Control Plane flag
 	uiAddr := flag.String("ui", "127.0.0.1:9090", "Address for Management Web UI and Control Plane API (loopback by default; use TLS termination before public exposure, 'none' to disable)")
 	adminToken := flag.String("admin-token", "", "Optional secret token for authenticating control-plane mutation API routes")
+	marketplaceOnline := flag.Bool("marketplace-online", false, "Allow explicit parser marketplace network requests")
+	marketplaceURL := flag.String("marketplace-url", "https://ashokkmt.github.io/worm", "Static parser marketplace registry URL")
 
 	flag.Parse()
 
@@ -410,6 +513,16 @@ func main() {
 	var packManager *packs.SnapshotManager
 	if *packsDir != "" {
 		if _, err := os.Stat(*packsDir); err == nil {
+			packLock, err := packs.AcquireDirectoryLock(*packsDir)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "FATAL: %v\n", err)
+				os.Exit(1)
+			}
+			defer packLock.Close()
+			if err := packs.RecoverTransactions(*packsDir); err != nil {
+				fmt.Fprintf(os.Stderr, "FATAL: Failed to recover parser pack transaction: %v\n", err)
+				os.Exit(1)
+			}
 			snap, err := packs.LoadDir(*packsDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "WARNING: Failed to load parser packs from %s: %v\n", *packsDir, err)
@@ -541,6 +654,7 @@ func main() {
 			AdminToken: *adminToken,
 		}
 		uiServer = api.NewServer(*uiAddr, store, p, packManager, *packsDir, cfgInfo, web.Dist(), Version)
+		uiServer.SetMarketplaceOptions(*marketplaceOnline, *marketplaceURL)
 		uiServer.SetIngestTracker(mgr)
 		uiServer.SetConnManager(connMgr, *sinksDir)
 		if err := uiServer.Start(); err != nil {
@@ -686,4 +800,22 @@ func main() {
 	if !valid {
 		os.Exit(2)
 	}
+}
+
+func stripCommandOptions(args []string, stripJSON bool) []string {
+	out := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--packs-dir", "-packs-dir", "--ui", "--admin-token", "--marketplace-url":
+			i++
+		case "--local", "--marketplace-online":
+		case "--json":
+			if !stripJSON {
+				out = append(out, args[i])
+			}
+		default:
+			out = append(out, args[i])
+		}
+	}
+	return out
 }

@@ -35,4 +35,4 @@ These instructions apply to the entire repository. Follow the current repository
 * **Codebase Analysis:** Before running global text searches across the workspace, always parse `graphify-out/graph.json` to understand the structural layout.
 * **Dependency & Import Maps:** Rely exclusively on `graphify-out/graph.json` to trace cross-file imports, function calls, and module relationships.
 * **Token Efficiency:** Do not read raw source files sequentially to find connections; the pre-compiled graph data in `graph.json` contains all architectural connections.
-* **Workspace Updates:** After making structural changes or adding new components, remind the user to run `graphify . --code-only` in their terminal to update the map and `graphify cluster-only /Users/ashok/projects/quotation` to generate GRAPH_REPORT.md and name communities.
+* **Workspace Updates:** After making structural changes or adding new components, remind the user to run `graphify . --code-only` in their terminal to update the map and `graphify cluster-only .` to generate GRAPH_REPORT.md and name communities.

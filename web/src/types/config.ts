@@ -8,5 +8,6 @@ export interface RuntimeConfig {
   db_path: string;
   workers: number;
   air_gapped: boolean;
+  marketplace_online: boolean;
   version: string;
 }

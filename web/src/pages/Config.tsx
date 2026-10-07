@@ -209,7 +209,7 @@ export const Config: React.FC = () => {
             System &amp; Connection Configuration
           </h1>
           <p className="text-xs font-mono text-[#8b949e] mt-1">
-            Declarative Connection resources, multi-sink routing (Kafka, HTTP SIEM, Parquet), and air-gapped system parameters.
+            Declarative Connection resources, multi-sink routing (Kafka, HTTP SIEM, Parquet), and marketplace connectivity settings.
           </p>
         </div>
 
@@ -556,11 +556,11 @@ export const Config: React.FC = () => {
               </div>
             </div>
 
-            {/* Air-Gap Guarantee Certificate */}
+            {/* Local UI security notes */}
             <div className="bg-[#0d1117] border border-purple-900/60 rounded-md p-4 mt-4">
               <div className="flex items-center space-x-2 text-purple-300 font-mono text-xs font-bold mb-2.5">
                 <ShieldCheck className="w-4 h-4 text-purple-400 shrink-0" />
-                <span>Air-Gapped Operational Compliance</span>
+                <span>Local UI Security</span>
               </div>
               <ul className="text-[11px] font-mono text-[#8b949e] space-y-2">
                 <li className="flex items-center text-emerald-400">

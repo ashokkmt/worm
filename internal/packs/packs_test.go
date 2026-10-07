@@ -73,6 +73,155 @@ func TestLoadPack_AllPacks(t *testing.T) {
 	}
 }
 
+func TestPackRollbackSurvivesManagerRestart(t *testing.T) {
+	dir := t.TempDir()
+	initial, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewSnapshotManager(initial)
+	mgr.SetPacksDir(dir)
+	content := []byte("apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: managed-test\n  version: 1.0.0\nspec:\n  sourceCategory: other\n  format: text\n  match:\n    contains: sample\n  fields: {}\n  map: {}\n")
+	if _, err = mgr.ApplyPackFile("managed-test.yaml", content); err != nil {
+		t.Fatal(err)
+	}
+	restartedSnap, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted := NewSnapshotManager(restartedSnap)
+	restarted.SetPacksDir(dir)
+	if err = restarted.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(filepath.Join(dir, "managed-test.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("pack remained after persistent rollback: %v", err)
+	}
+}
+
+func TestNamedRollbackRestoresPackVersionAndManifest(t *testing.T) {
+	dir := t.TempDir()
+	snap, _ := LoadDir(dir)
+	mgr := NewSnapshotManager(snap)
+	mgr.SetPacksDir(dir)
+	first := []byte("apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: managed-test\n  version: 1.0.0\nspec:\n  sourceCategory: other\n  format: text\n  match:\n    contains: sample\n  fields: {}\n  map: {}\n")
+	second := []byte(strings.Replace(string(first), "1.0.0", "1.1.0", 1))
+	if _, err := mgr.ApplyPackFileWithState("managed-test.yaml", first, &PackFileExpectation{Exists: false}, "marketplace", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mgr.ApplyPackFileWithState("managed-test.yaml", second, &PackFileExpectation{Exists: true, Digest: digestBytes(first)}, "marketplace", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := mgr.RollbackPack("managed-test"); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ReadManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manifest.Entries["managed-test"].Version; got != "1.0.0" {
+		t.Fatalf("manifest version %s, want 1.0.0", got)
+	}
+	pack, ok := mgr.Active().GetPack("managed-test")
+	if !ok || pack.Metadata.Version != "1.0.0" {
+		t.Fatalf("runtime pack was not rolled back: %#v", pack)
+	}
+}
+
+func TestApplyExpectedRejectsConcurrentChange(t *testing.T) {
+	dir := t.TempDir()
+	snap, _ := LoadDir(dir)
+	mgr := NewSnapshotManager(snap)
+	mgr.SetPacksDir(dir)
+	content := []byte("apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: managed-test\n  version: 1.0.0\nspec:\n  sourceCategory: other\n  format: text\n  match:\n    contains: sample\n  fields: {}\n  map: {}\n")
+	if _, err := mgr.ApplyPackFileExpected("managed-test.yaml", content, &PackFileExpectation{Exists: true, Digest: "stale"}); err == nil {
+		t.Fatal("stale expected state unexpectedly accepted")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "managed-test.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("stale operation changed disk: %v", err)
+	}
+}
+
+func TestRemoveExpectedRejectsChangedPack(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte("apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: managed-test\n  version: 1.0.0\nspec:\n  sourceCategory: other\n  format: text\n  match:\n    contains: sample\n  fields: {}\n  map: {}\n")
+	if err := os.WriteFile(filepath.Join(dir, "managed-test.yaml"), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewSnapshotManager(snap)
+	mgr.SetPacksDir(dir)
+	if _, err = mgr.RemovePackFileExpected("managed-test.yaml", &PackFileExpectation{Exists: true, Digest: "stale"}); err == nil {
+		t.Fatal("stale remove unexpectedly succeeded")
+	}
+	if _, err = os.Stat(filepath.Join(dir, "managed-test.yaml")); err != nil {
+		t.Fatalf("stale remove deleted active file: %v", err)
+	}
+}
+
+func TestApplyPreservesRenamedPackFilename(t *testing.T) {
+	dir := t.TempDir()
+	first := []byte("apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: managed-test\n  version: 1.0.0\nspec:\n  sourceCategory: other\n  format: text\n  match:\n    contains: sample\n  fields: {}\n  map: {}\n")
+	filename := "renamed.yml"
+	if err := os.WriteFile(filepath.Join(dir, filename), first, 0644); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := NewSnapshotManager(snap)
+	mgr.SetPacksDir(dir)
+	second := []byte(strings.Replace(string(first), "1.0.0", "1.1.0", 1))
+	if _, err = mgr.ApplyPackFileWithState(filename, second, &PackFileExpectation{Exists: true, Digest: digestBytes(first)}, "marketplace", false); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := ReadManifest(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := manifest.Entries["managed-test"].Filename; got != filename {
+		t.Fatalf("filename changed to %s", got)
+	}
+}
+
+func TestRecoverInterruptedPackMutation(t *testing.T) {
+	dir := t.TempDir()
+	before := []byte("previous bytes")
+	if err := os.WriteFile(filepath.Join(dir, "one.yaml"), []byte("partial bytes"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTransactionRecord(dir, transactionRecord{Before: rollbackRecord{Filename: "one.yaml", Existed: true, Content: before}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverTransactions(dir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "one.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(before) {
+		t.Fatalf("got %q, want restored %q", got, before)
+	}
+}
+
+func TestDirectoryLockRejectsConcurrentOwner(t *testing.T) {
+	dir := t.TempDir()
+	first, err := AcquireDirectoryLock(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	if second, err := AcquireDirectoryLock(dir); err == nil {
+		second.Close()
+		t.Fatal("second directory lock unexpectedly succeeded")
+	}
+}
+
 func TestLoadPack_StrictYAML(t *testing.T) {
 	invalidYAML := `
 apiVersion: worm.io/v1

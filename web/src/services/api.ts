@@ -1,6 +1,6 @@
 import { SystemStats, HealthStatus } from '../types/telemetry';
 import { NormalizedEvent, EventTrace, QuarantineEntry, SourceSummary } from '../types/event';
-import { ParserPackSummary, PackValidationResponse } from '../types/pack';
+import { ParserPackSummary, PackValidationResponse, MarketplacePack } from '../types/pack';
 import { RuntimeConfig } from '../types/config';
 import { ConnectionSummary, ConnectionValidationResponse, ConnectionTestResponse, ConnectionApplyResponse } from '../types/connection';
 
@@ -114,6 +114,22 @@ export const apiService = {
   listSources: () => fetchJSON<{ sources: SourceSummary[] }>('/sources'),
 
   listPacks: () => fetchJSON<{ version: string; packs: ParserPackSummary[] }>('/packs'),
+  listMarketplace: (q = '', category = '', format = '', offset=0, filters:{vendor?:string;product?:string;model?:string}={}) => {
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (category) params.set('category', category);
+    if (format) params.set('format', format);
+    Object.entries(filters).forEach(([key,value])=>{if(value)params.set(key,value)});
+    params.set('limit','100');if(offset)params.set('offset',String(offset));
+    return fetchJSON<{ packs: Array<{pack:MarketplacePack;latest_compatible?:MarketplacePack['releases'][number];installed?:import('../types/pack').MarketplaceInstalled;modified?:boolean}>; total: number; limit:number;offset:number;generated: string }>(`/marketplace/packs?${params}`).then(data=>({...data,packs:data.packs.map(item=>({...item.pack,latest_compatible:item.latest_compatible,installed:item.installed,modified:item.modified}))}));
+  },
+  marketplaceStatus: () => fetchJSON<{online:boolean;catalog_available:boolean;catalog_source:string;generated?:string;error?:string;last_refresh?:string;last_refresh_error?:string}>('/marketplace/status'),
+  refreshMarketplace: () => fetchJSON<{status:string;generated:string;packs:number}>('/marketplace/refresh',{method:'POST'}),
+  installMarketplacePack: (name: string, version = 'latest') => fetchJSON<{ status: string; name: string; version: string; activated?: boolean }>(
+    '/packs/install', { method: 'POST', body: JSON.stringify({ name, version }) }
+  ),
+  upgradeMarketplacePack: (name:string, all=false) => fetchJSON<{results:Array<{name:string;status:string;status_code?:number;version?:string;error?:string}>}>('/packs/upgrade',{method:'POST',body:JSON.stringify({name,all})}),
+  removeMarketplacePack: (name:string) => fetchJSON<{status:string;name:string}>(`/packs/${encodeURIComponent(name)}`,{method:'DELETE'}),
 
   validatePack: (yamlContent: string, sampleLog: string) =>
     fetchJSON<PackValidationResponse>('/packs/validate', {
@@ -127,10 +143,8 @@ export const apiService = {
       body: JSON.stringify({ yaml_content: yamlContent, filename }),
     }),
 
-  rollbackPack: () =>
-    fetchJSON<{ status: string; version: string }>('/packs/rollback', {
-      method: 'POST',
-    }),
+  rollbackPack: (name?:string) =>
+    fetchJSON<{ status: string; version: string }>('/packs/rollback', {method: 'POST',body:JSON.stringify(name?{name}:{})}),
 
   getConfig: () => fetchJSON<RuntimeConfig>('/config'),
 
@@ -156,4 +170,3 @@ export const apiService = {
       method: 'POST',
     }),
 };
-
