@@ -23,6 +23,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build embedded UI
+        run: |
+          npm ci --prefix web
+          npm run build --prefix web
       - name: Validate parser fixtures and bundled catalog
         run: |
           go test ./...
