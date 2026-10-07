@@ -1,0 +1,49 @@
+name: Publish parser marketplace
+
+on:
+  push:
+    branches: [main]
+    paths: ["packs/*.yaml", "marketplace/metadata.json", "marketplace/releases/**", "cmd/marketplace/**", "internal/marketplace/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: marketplace-publish
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate parser fixtures and bundled catalog
+        run: |
+          go test ./...
+          go run ./cmd/marketplace -check-packs packs
+      - name: Build signed static marketplace
+        env:
+          WORM_MARKETPLACE_SIGNING_KEY: ${{ secrets.WORM_MARKETPLACE_SIGNING_KEY }}
+        run: go run ./cmd/marketplace -packs packs -metadata marketplace/metadata.json -out internal/marketplace/catalog.json -site marketplace-site
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: marketplace-site/
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
