@@ -194,53 +194,57 @@ func TestNormalize_AllSixSourcesGolden(t *testing.T) {
 				t.Fatalf("no decoded records produced")
 			}
 
-			decRec := decodedRecords[0]
+			for recordIndex, decRec := range decodedRecords {
 
-			// 2. Match parser pack
-			pack, err := snap.Match(decRec)
-			if err != nil {
-				t.Fatalf("pack match failed: %v", err)
-			}
-			if pack.Metadata.Name != s.packName {
-				t.Errorf("expected pack %s, got %s", s.packName, pack.Metadata.Name)
-			}
+				// Every decoded record must have an unambiguous parser and normalize successfully.
+				pack, err := snap.Match(decRec)
+				if err != nil {
+					t.Fatalf("pack match failed: %v", err)
+				}
+				if pack.Metadata.Name != s.packName {
+					t.Errorf("expected pack %s, got %s", s.packName, pack.Metadata.Name)
+				}
 
-			// Mock raw event
-			rawEvt := &model.RawEvent{
-				RawID:      "worm-raw-20260920-000001-test",
-				RawSHA256:  "559f4db86f4a3fde93c500e063c1b6e2e69b15f4d8bb168d5e213b6fa54d6022",
-				ByteCount:  len(rawBytes),
-				Transport:  s.transport,
-				SourceIP:   s.sourceIP,
-				ReceivedAt: time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC),
-				Payload:    rawBytes,
-				Status:     model.StatusAccepted,
-			}
+				// Mock raw event
+				rawEvt := &model.RawEvent{
+					RawID:      "worm-raw-20260920-000001-test",
+					RawSHA256:  "559f4db86f4a3fde93c500e063c1b6e2e69b15f4d8bb168d5e213b6fa54d6022",
+					ByteCount:  len(rawBytes),
+					Transport:  s.transport,
+					SourceIP:   s.sourceIP,
+					ReceivedAt: time.Date(2026, 9, 20, 10, 0, 0, 0, time.UTC),
+					Payload:    rawBytes,
+					Status:     model.StatusAccepted,
+				}
 
-			// 3. Normalize
-			norm, err := normalizer.Normalize(rawEvt, decRec, pack, []model.ProcessingStep{
-				{Stage: "raw_commit", Timestamp: time.Now().UTC(), Result: "ok"},
-				{Stage: "format_detect", Timestamp: time.Now().UTC(), Result: decRec.Format},
-			})
-			if err != nil {
-				t.Fatalf("Normalize failed: %v", err)
-			}
+				// 3. Normalize
+				norm, err := normalizer.Normalize(rawEvt, decRec, pack, []model.ProcessingStep{
+					{Stage: "raw_commit", Timestamp: time.Now().UTC(), Result: "ok"},
+					{Stage: "format_detect", Timestamp: time.Now().UTC(), Result: decRec.Format},
+				})
+				if err != nil {
+					t.Fatalf("Normalize failed: %v", err)
+				}
 
-			// 4. Validate
-			if err := validator.Validate(norm); err != nil {
-				t.Fatalf("Validate failed: %v", err)
-			}
+				// 4. Validate
+				if err := validator.Validate(norm); err != nil {
+					t.Fatalf("Validate failed: %v", err)
+				}
 
-			// 5. Compare with expected
-			if norm.Worm.SourceCategory != expected.Worm.SourceCategory {
-				t.Errorf("category mismatch: got %s, want %s", norm.Worm.SourceCategory, expected.Worm.SourceCategory)
-			}
-			if norm.Worm.ParserPack != expected.Worm.ParserPack {
-				t.Errorf("pack mismatch: got %s, want %s", norm.Worm.ParserPack, expected.Worm.ParserPack)
-			}
+				// Fixture expected output represents the first record; all records above still
+				// exercise matching, extraction, and OCSF validation.
+				if recordIndex == 0 && norm.Worm.SourceCategory != expected.Worm.SourceCategory {
+					t.Errorf("category mismatch: got %s, want %s", norm.Worm.SourceCategory, expected.Worm.SourceCategory)
+				}
+				if recordIndex == 0 && norm.Worm.ParserPack != expected.Worm.ParserPack {
+					t.Errorf("pack mismatch: got %s, want %s", norm.Worm.ParserPack, expected.Worm.ParserPack)
+				}
 
-			// Compare all expected fields deeply
-			matchExpected(t, s.name, norm.OCSF, expected.OCSF)
+				// Compare all expected fields deeply
+				if recordIndex == 0 {
+					matchExpected(t, s.name, norm.OCSF, expected.OCSF)
+				}
+			}
 		})
 	}
 }

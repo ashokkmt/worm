@@ -61,7 +61,7 @@ export const App: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>WORM </span>
           {/* <span>WORM // SIH 26156 &mdash; Universal Log Pre-processing Framework</span> */}
-          <span className="text-emerald-400">Air-Gapped Operational Console &bull; Zero External Dependencies</span>
+          <span className="text-emerald-400">Offline-Ready Console &bull; Marketplace Access Is Opt-In</span>
         </div>
       </footer>
     </div>

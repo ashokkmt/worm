@@ -176,8 +176,8 @@ func StatusDaemon(pidFile, uiAddr string) {
 		if u, ok := health["uptime_seconds"].(float64); ok {
 			fmt.Printf("  Uptime:          %s\n", time.Duration(u*float64(time.Second)).Truncate(time.Second))
 		}
-		if ag, ok := health["air_gapped"].(bool); ok {
-			fmt.Printf("  Air-Gapped Mode: %v\n", ag)
+		if online, ok := health["marketplace_online"].(bool); ok {
+			fmt.Printf("  Marketplace Access: %v\n", map[bool]string{true: "enabled", false: "offline"}[online])
 		}
 	} else {
 		fmt.Printf("  Control Plane:   UNREACHABLE (%s)\n", baseURL)
@@ -307,29 +307,7 @@ func ApplyPackCLI(packFilePath, uiAddr, packsDir string) {
 		os.Exit(1)
 	}
 
-	// 1. Copy permanently to packsDir
-	safeName := filepath.Base(pack.Metadata.Name)
-	if strings.ContainsAny(safeName, "/\\") || strings.Contains(safeName, "..") || safeName == "." {
-		fmt.Fprintf(os.Stderr, "ERROR: Pack name %q contains invalid characters\n", pack.Metadata.Name)
-		os.Exit(1)
-	}
-	cleanPacksDir := filepath.Clean(packsDir)
-	destPath := filepath.Join(cleanPacksDir, safeName+".yaml")
-	rel, err := filepath.Rel(cleanPacksDir, destPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		fmt.Fprintf(os.Stderr, "ERROR: Invalid destination path for pack\n")
-		os.Exit(1)
-	}
-
-	if err := os.WriteFile(destPath, data, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to save pack to %s: %v\n", destPath, err)
-		os.Exit(1)
-	}
-
-	fmt.Printf("\n[WORM] Validated parser pack '%s' v%s (format: %s)\n", pack.Metadata.Name, pack.Metadata.Version, pack.Spec.Format)
-	fmt.Printf("[WORM] Installed permanently to: %s\n", destPath)
-
-	// 2. Activate in running daemon if available
+	// Apply through the running owner so disk and runtime snapshots change together.
 	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 3 * time.Second}
 
@@ -337,17 +315,31 @@ func ApplyPackCLI(packFilePath, uiAddr, packsDir string) {
 		"yaml_content": string(data),
 		"filename":     pack.Metadata.Name + ".yaml",
 	})
-	resp, err := client.Post(baseURL+"/api/v1/packs/activate", "application/json", bytes.NewReader(reqBody))
-	if err != nil || resp.StatusCode != http.StatusOK {
-		fmt.Printf("[WORM] (Engine daemon not currently reachable at %s; pack will load on next startup)\n\n", baseURL)
-		return
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/api/v1/packs/activate", bytes.NewReader(reqBody))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	setMarketplaceAuth(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: WORM management API unavailable at %s; use --local only when the service is stopped: %v\n", baseURL, err)
+		os.Exit(1)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		fmt.Fprintf(os.Stderr, "ERROR: pack activation rejected by WORM (%s)\n", resp.Status)
+		os.Exit(1)
 	}
 	resp.Body.Close()
-	fmt.Printf("[WORM] Runtime memory snapshot updated successfully.\n")
+	fmt.Printf("\n[WORM] Pack %s v%s validated and activated.\n", pack.Metadata.Name, pack.Metadata.Version)
 
 	// 3. Reconcile quarantine DLQ: trigger bulk replay for matching quarantined logs
 	fmt.Printf("[WORM] Reconciling Quarantine DLQ against newly activated pack...\n")
-	replayResp, err := client.Post(baseURL+"/api/v1/quarantine/replay-all", "application/json", nil)
+	replayReq, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/quarantine/replay-all", nil)
+	setMarketplaceAuth(replayReq)
+	replayResp, err := client.Do(replayReq)
 	if err == nil && replayResp.StatusCode == http.StatusOK {
 		var repResult struct {
 			Total    int `json:"total"`
@@ -361,6 +353,41 @@ func ApplyPackCLI(packFilePath, uiAddr, packsDir string) {
 	} else {
 		fmt.Printf("[WORM] Reconcile complete.\n\n")
 	}
+}
+
+func ApplyPackLocalCLI(packFilePath, packsDir string) {
+	data, err := os.ReadFile(packFilePath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	pack, err := packs.LoadPack(bytes.NewReader(data))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Pack validation failed: %v\n", err)
+		os.Exit(1)
+	}
+	lock, err := packs.AcquireDirectoryLock(packsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	defer lock.Close()
+	if err = packs.RecoverTransactions(packsDir); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: pack recovery failed: %v\n", err)
+		os.Exit(1)
+	}
+	snap, err := packs.LoadDir(packsDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	mgr := packs.NewSnapshotManager(snap)
+	mgr.SetPacksDir(packsDir)
+	if _, err = mgr.ApplyPackFile(pack.Metadata.Name+".yaml", data); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Installed %s v%s locally; it will activate on the next startup.\n", pack.Metadata.Name, pack.Metadata.Version)
 }
 
 func ListQuarantineCLI(uiAddr, dbPath string) {
@@ -575,11 +602,38 @@ func TestPackCLI(filePath, sample string) {
 	fmt.Println()
 }
 
-func RollbackPackCLI(uiAddr, packsDir string) {
+func RollbackPackCLI(uiAddr, packsDir string, local ...bool) {
+	if len(local) > 0 && local[0] {
+		lock, err := packs.AcquireDirectoryLock(packsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: cannot manage packs locally: %v\n", err)
+			os.Exit(1)
+		}
+		defer lock.Close()
+		if err := packs.RecoverTransactions(packsDir); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: pack recovery failed: %v\n", err)
+			os.Exit(1)
+		}
+		snap, err := packs.LoadDir(packsDir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: failed to load packs directory: %v\n", err)
+			os.Exit(1)
+		}
+		mgr := packs.NewSnapshotManager(snap)
+		mgr.SetPacksDir(packsDir)
+		if err := mgr.Rollback(); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: pack rollback failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("Parser pack rollback committed; it will be active on next startup.")
+		return
+	}
 	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	resp, err := client.Post(baseURL+"/api/v1/packs/rollback", "application/json", nil)
+	req, _ := http.NewRequest(http.MethodPost, baseURL+"/api/v1/packs/rollback", nil)
+	setMarketplaceAuth(req)
+	resp, err := client.Do(req)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		var res struct {
 			Status  string `json:"status"`
@@ -592,22 +646,13 @@ func RollbackPackCLI(uiAddr, packsDir string) {
 		return
 	}
 	if resp != nil {
-		resp.Body.Close()
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		fmt.Fprintf(os.Stderr, "ERROR: daemon rollback rejected (%s): %s\n", resp.Status, strings.TrimSpace(string(body)))
+	} else {
+		fmt.Fprintf(os.Stderr, "ERROR: daemon rollback failed: %v\n", err)
 	}
-
-	// Fallback to local snapshot manager if server offline
-	snap, err := packs.LoadDir(packsDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: failed to load packs directory: %v\n", err)
-		os.Exit(1)
-	}
-	mgr := packs.NewSnapshotManager(snap)
-	mgr.SetPacksDir(packsDir)
-	if err := mgr.Rollback(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: pack rollback failed: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("\n[WORM] Parser Pack Local Rollback Successful!\n\n")
+	os.Exit(1)
 }
 
 // --- Sources CLI (kind: Source) ---

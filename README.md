@@ -110,6 +110,19 @@ worm packs apply -f new-device.yaml
 worm replay <quarantine-id>         # if it remains quarantined; or: worm replay all
 ```
 
+### Parser marketplace
+
+WORM ships a signed offline catalog built from the parser packs in `packs/`. Search it with `worm marketplace search <term>` or inspect a pack with `worm marketplace show <name>`. To refresh the catalog or download/install a missing release, start WORM with `--marketplace-online`; API changes require `--admin-token` or `WORM_ADMIN_TOKEN`.
+
+```sh
+worm marketplace search firewall
+worm marketplace refresh
+worm packs install network-device-asa@1.0.3
+worm packs remove network-device-asa
+```
+
+The marketplace publisher is owner-managed through `.github/workflows/marketplace.yml`. Configure an owner-required reviewer for the `marketplace-publish` GitHub environment, add the durable owner-held base64 Ed25519 private key as `WORM_MARKETPLACE_SIGNING_KEY`, and enable GitHub Pages publication. WORM retains trust in `worm-market-2026` and also trusts the new `worm-market-2026-v2` owner key. Add vendor/product/model and per-release coverage in `marketplace/metadata.json`; preserve prior release YAML under `marketplace/releases/<name>/<version>.yaml`. The committed signed catalog is the binary seed and is checked against shipped packs. The embedded UI and CLI use the same signed catalog; marketplace access remains opt-in.
+
 These are example placeholders: the pack must actually match a quarantined event. Pack activation currently also requests bulk replay; check its report before replaying an ID manually. Replay and pack activation need the running management API, and their CLI token handling has a known limitation described in [CLI.md](CLI.md#replay-recover-an-event-after-adding-parser-knowledge) and [SECURITY.md](SECURITY.md). The `-verify` commands compare stored bytes/events to hashes in the same database; they are consistency checks, not independently anchored tamper-proof evidence.
 
 ## Docker and simulation

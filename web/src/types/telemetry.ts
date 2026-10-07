@@ -22,6 +22,7 @@ export interface SystemStats {
 
 export interface HealthStatus {
   status: string;
+  marketplace_online?: boolean;
   version: string;
   air_gapped: boolean;
   uptime_seconds: number;

@@ -6,4 +6,5 @@ data/
 *.db-wal
 *.db-shm
 dist/
+marketplace-site/
 vendor/
