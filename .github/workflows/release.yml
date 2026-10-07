@@ -73,6 +73,8 @@ jobs:
         shell: bash
         env:
           CGO_ENABLED: '0'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
@@ -84,6 +86,9 @@ jobs:
           suffix=''
           if [[ "$os" == windows ]]; then suffix='.exe'; fi
           go build -trimpath -ldflags="-s -w -X 'main.Version=${tag}'" -o "$stage/worm$suffix" ./cmd/worm
+          build_info="$(go version -m "$stage/worm$suffix")"
+          [[ "$build_info" == *"GOOS=$os"* ]] || { echo "Expected GOOS=$os in binary build info" >&2; exit 1; }
+          [[ "$build_info" == *"GOARCH=$arch"* ]] || { echo "Expected GOARCH=$arch in binary build info" >&2; exit 1; }
           cp -R packs schemas sources sinks "$stage/"
           tar -czf "$stage.tar.gz" -C "$stage" .
       - name: Verify version flag on Linux amd64
