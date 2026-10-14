@@ -1,122 +1,207 @@
 # WORM CLI reference
 
-Run commands from the repository root or an extracted Release directory so the default `packs/`, `sources/`, and `sinks/` paths resolve. The examples below use `worm` as a placeholder: run `./worm` on Linux/macOS, `.\worm.exe` in Windows PowerShell, or an installed `worm` on your `PATH`. `worm -h` prints the Go flag parser's current list. Arguments use a single hyphen; `-v` and `--version` are the dedicated version aliases.
+Run commands from the repository root or an extracted release folder. Source-build examples use ./bin/worm (PowerShell: .\bin\worm.exe); release archives keep the binary at their root, so use ./worm (PowerShell: worm.exe) there. The binary includes the web UI and does not need Go or Node.js at runtime. Use worm -h for startup flags and worm --version to identify the build.
 
-## Startup flags
+## Start and configure WORM
 
-`worm` without a management subcommand starts the processing engine. Network listeners bind to loopback by default; specify an explicit address such as `0.0.0.0:8080` only when remote access is intended. Management HTTP is not TLS, so use a trusted TLS-terminating proxy before exposing it. `none` disables the indicated optional listener/output, but see each row for its exact behavior.
+Running `worm` starts WORM in the foreground. Listener defaults bind to loopback. Marketplace access is **off by default** and does not affect ingestion. When enabled, WORM makes network requests only for explicit marketplace actions; it does not poll in the background.
 
-| Flag | Default | What it does |
+| Argument | Default | Purpose |
 |---|---|---|
-| `-db <path>` | `data/worm.db` | SQLite database for raw payloads, hashes, normalized events, quarantine records, and delivery state. The parent directory is created. Use this same path for later verification. |
-| `-packs-dir <dir>` | `packs` | Load YAML parser packs at startup; packs decide whether and how decoded fields map to the common event. `packs` subcommands also use this directory. |
-| `-sources-dir <dir>` | `sources` | Load declarative `Source` YAML for cloud pull, Kafka input, or Syslog TLS. An example file with `enabled: false` does not start an adapter. |
-| `-sinks-dir <dir>` | `sinks` | Load declarative `Sink` YAML for HTTP, Kafka, Parquet, or NDJSON output. Disabled examples do not deliver events. |
-| `-workers <n>` | `4` | Number of concurrent processing workers. It does not add listener ports or turn one SQLite database into a distributed store. |
-| `-file <path>` | off | Ingest one file at startup. If other listeners and enabled sources are disabled, WORM drains the pipeline, prints final accounting, and exits; otherwise the server continues running. |
-| `-stdin` | `false` | Read records from standard input. A pipe is detected automatically; use the flag to request stdin explicitly. |
-| `-stdin-framing line\|ndjson\|document` | `line` | `line` and `ndjson` currently submit each nonempty line as one record; `document` submits the entire bounded stream as one payload, useful for multiline JSON/XML/CSV. Detection and decoding happen afterward. |
-| `-syslog-udp <addr>` | `127.0.0.1:1514` | Plaintext Syslog UDP listener (best effort). Use an explicit all-interface address for remote senders, or `none` to disable. |
-| `-syslog-tcp <addr>` | `127.0.0.1:1514` | Plaintext Syslog TCP listener with newline and octet-counted framing. Use an explicit all-interface address for remote senders, or `none` to disable. |
-| `-syslog-tls <addr>` | `none` | Opt-in encrypted Syslog TLS listener. Requires `-tls-cert` and `-tls-key`; use a suitable unprivileged port such as `:7514`. |
-| `-tls-cert <path>` | unset | PEM X.509 server certificate for `-syslog-tls`. |
-| `-tls-key <path>` | unset | Matching private key for `-syslog-tls`. Keep it out of the repository. |
-| `-tls-client-ca <path>` | unset | Optional PEM client CA. If supplied, the TLS listener requires and verifies client certificates (mTLS). |
-| `-http <addr>` | `127.0.0.1:8080` | HTTP intake listener: `POST /api/v1/ingest` and `GET /api/v1/health`. Use an explicit all-interface address for remote senders and configure `-http-key`; or use `none` to disable. This is separate from the management UI/API. |
-| `-http-key <token>` | unset | Require `X-WORM-Key: <token>` or `Authorization: Bearer <token>` on HTTP ingest POSTs. Keep tokens out of checked-in files and shell history. |
-| `-inbox <dir>` | `data/inbox` | Watch a spool directory for dropped files; WORM uses `processing/`, `processed/`, and `failed/` subdirectories. Use `none` to disable. |
-| `-output-file <path>` | `data/output/normalized.ndjson` | Write normalized events as line-delimited JSON. Use `none` to disable this file sink. |
-| `-stdout[=true\|false]` | `true` | Stream normalized JSON to stdout. `-stdout=false` suppresses it; the database and other configured outputs remain active. |
-| `-ui <addr>` | `127.0.0.1:9090` | Management web UI and control-plane API listener, for example `-ui 127.0.0.1:9090` then open `http://127.0.0.1:9090`. Use a TLS-terminating proxy before remote exposure. `none` disables the UI/API; live apply and replay commands then cannot contact it. |
-| `-admin-token <token>` | unset | Token for protected control-plane routes, including raw traces and connection tests. Supply the token in the UI's session-only field or send `Authorization: Bearer <token>` / `X-WORM-Admin-Key`. Avoid shell history; see [SECURITY.md](SECURITY.md). |
-| `-d` | `false` | Detach into a child process, write PID to `data/worm.pid`, append logs to `data/worm.log`, and return the terminal. The child gets the other startup flags. |
-| `-stop` | `false` | Stop the detached process identified by `data/worm.pid`. `worm stop` and `worm --stop` are aliases. |
-| `-status` | `false` | Show detached-process status and a management health probe. `worm status` and `worm --status` are aliases; the verb form probes the default `:9090`. |
-| `-replay <id\|all\|list>` | unset | List or replay quarantine entries through the running management API. Bare `worm replay` / `worm -replay` lists; `worm -replay=list` also lists. `worm replay <id>` reprocesses one and `worm replay all` reprocesses eligible entries in bulk. |
-| `-replay-all` | `false` | Bulk-replay alias for `worm replay all`. |
-| `-verify <raw-id>` | unset | Open `-db`, recompute SHA-256 over stored raw bytes, and compare with the stored receipt hash. This action exits without starting listeners. |
-| `-verify-event <event-id>` | unset | Open `-db` and verify the normalized event plus its raw parent/lineage; exits without starting listeners. |
-| `-v`, `--version` | — | Print `WORM CLI Version: <version>` and exit. Use as the sole argument. |
-| `-h` | — | Print the Go flag help text and exit. |
+| `-db <file>` | `data/worm.db` | SQLite database for raw events, normalized events, quarantine, and delivery state. |
+| `-packs-dir <dir>` | `packs` | Active YAML parser packs and their hidden `.marketplace/` cache/management files. Paths are relative to the process working directory unless absolute. |
+| `-sources-dir <dir>` | `sources` | YAML source adapter definitions. |
+| `-sinks-dir <dir>` | `sinks` | YAML output adapter definitions. |
+| `-workers <n>` | `4` | Processing worker count. |
+| `-file <file>` | off | Read one file on startup. WORM exits after processing only when other inputs are disabled. |
+| `-stdin` | `false` | Read stdin; piped input is also detected automatically. |
+| `-stdin-framing line\|ndjson\|document` | `line` | Treat each line as a record or the complete bounded input as one document. |
+| `-syslog-udp <address>` | `127.0.0.1:1514` | Syslog UDP listener. Use `none` to disable or an explicit interface address to accept remote senders. |
+| `-syslog-tcp <address>` | `127.0.0.1:1514` | Syslog TCP listener. Use `none` to disable. |
+| `-syslog-tls <address>` | `none` | Syslog TLS listener; requires `-tls-cert` and `-tls-key`. |
+| `-tls-cert <file>` | unset | PEM server certificate for Syslog TLS. |
+| `-tls-key <file>` | unset | Matching TLS private key. Keep it private. |
+| `-tls-client-ca <file>` | unset | Client CA; enables required client-certificate verification (mTLS). |
+| `-http <address>` | `127.0.0.1:8080` | HTTP ingestion API (`POST /api/v1/ingest`, `GET /api/v1/health`). `none` disables it. |
+| `-http-key <token>` | unset | Require this key on HTTP ingest requests. |
+| `-inbox <dir>` | `data/inbox` | Watched file-drop folder. `none` disables it. |
+| `-output-file <file>` | `data/output/normalized.ndjson` | Normalized NDJSON file output. `none` disables it. |
+| `-stdout[=true\|false]` | `true` | Print normalized NDJSON to the terminal. |
+| `-ui <address>` | `127.0.0.1:9090` | Web UI and management API. `none` disables live management. Management HTTP needs a trusted TLS proxy before remote exposure. |
+| `-admin-token <token>` | unset | Protects configured management write routes. Prefer setting `WORM_ADMIN_TOKEN` in the service environment so the secret is not in shell history. |
+| `--marketplace-online` | off | Allow explicit catalog refresh and missing-artifact downloads. No internet request is made without this option. |
+| `--marketplace-url <url>` | `https://ashokkmt.github.io/worm` | Marketplace registry root. Do not append `catalog.json`; WORM adds it. |
+| `-d` | foreground | Start detached and write `data/worm.pid` and `data/worm.log`. |
+| `-stop` / `worm stop` | — | Stop a detached WORM process. |
+| `-status` / `worm status` | — | Show daemon and control API status. |
+| `-replay <id\|all\|list>` | — | List quarantine records or replay one/all through the running management API. `worm replay` is the short form. |
+| `-replay-all` | false | Alias for replaying all eligible quarantine records. |
+| `-verify <raw-id>` | — | Recompute and compare the stored raw-payload SHA-256. |
+| `-verify-event <event-id>` | — | Check normalized-event integrity and raw-event lineage. |
+| `-v`, `--version`, `-h` | — | Print version or built-in flag help. |
 
-Examples:
+Use the startup arguments once when starting the service. For example, the official online registry needs no custom URL:
 
 ```sh
-# Local-only HTTP intake and UI; no Syslog or watched inbox.
-worm -syslog-udp none -syslog-tcp none -syslog-tls none -inbox none -http 127.0.0.1:8080 -ui 127.0.0.1:9090
+# Local listeners, web UI, and explicit marketplace access
+./bin/worm -syslog-udp 127.0.0.1:1514 -syslog-tcp 127.0.0.1:1514 \
+  -http 127.0.0.1:8080 -ui 127.0.0.1:9090 \
+  --marketplace-online
 
-# One-shot file; use no other listener/source if you want it to exit afterward.
-worm -file testdata/sources/network-device-firewall/valid_session.log -syslog-udp none -syslog-tcp none -syslog-tls none -http none -ui none -inbox none
-
-# Same listener settings, but return the terminal immediately.
-worm -d -syslog-udp none -syslog-tcp none -syslog-tls none -inbox none -http 127.0.0.1:8080 -ui 127.0.0.1:9090
-worm status
-worm stop
+# Same WORM without marketplace network access
+./bin/worm -syslog-udp 127.0.0.1:1514 -syslog-tcp 127.0.0.1:1514 \
+  -http 127.0.0.1:8080 -ui 127.0.0.1:9090
 ```
 
-The `Source` YAML directory can also start enabled intake adapters, so disabling the direct listener flags alone is not always enough to make `-file` a one-shot run. Use an empty `-sources-dir` for an isolated batch test.
+To use a different static registry, add `--marketplace-url https://registry.example/root`. Marketplace write operations need an admin token configured on the running WORM. Set it before startup and in the shell used for CLI management:
+
+```sh
+export WORM_ADMIN_TOKEN="$(openssl rand -hex 32)"
+./bin/worm -ui 127.0.0.1:9090 --marketplace-online
+```
+
+Save the token securely if it must survive a restart. A token supplied only to the CLI does not configure the server. The UI's token input lasts only for that browser session.
+
+Other useful modes:
+
+```sh
+# One-shot file, with all long-running listeners disabled
+./bin/worm -file testdata/sources/network-device-firewall/valid_session.log \
+  -syslog-udp none -syslog-tcp none -syslog-tls none -http none -ui none -inbox none
+
+# Detached service and later status/stop
+./bin/worm -d --marketplace-online
+./bin/worm status
+./bin/worm stop
+
+# Standard-input processing
+cat sample.log | ./bin/worm -stdin -syslog-udp none -syslog-tcp none -http none -ui none -inbox none
+```
 
 ## Decoded formats
 
-Transport and format are different: HTTP, Syslog, files, and stdin *carry* bytes; the decoder determines their syntax. The current registry has seven decoder families:
+Transport and decoded format are separate: HTTP, Syslog, files, and stdin carry bytes; WORM's decoder reads the syntax. The current decoder families are:
 
-| Format | Current decoding behavior |
+| Format | Behavior |
 |---|---|
-| Syslog | RFC 5424 and RFC 3164 envelopes; a body can contain another supported format, such as CEF or LEEF. |
-| JSON | Object and bounded multi-record forms such as arrays/NDJSON, depending on intake framing. |
-| XML | Single documents and bounded repeated child records selected by a pack. |
-| CSV | Header/row parsing, with pack-specific field mapping. |
-| CEF | CEF header and extension fields. |
+| Syslog | RFC 5424 and RFC 3164 envelopes; their bodies can contain another supported format. |
+| JSON | Objects and bounded arrays/NDJSON records, depending on intake framing. |
+| XML | Documents and bounded repeated child records selected by a pack. |
+| CSV | Header/row parsing with pack-specific field mapping. |
+| CEF | CEF headers and extension fields. |
 | LEEF | LEEF 1.0/2.0 headers and attributes, direct or Syslog-wrapped. |
-| Text | Proprietary or application-specific text extracted through declarative pack rules. |
+| Text | Proprietary/application text extracted through declarative pack rules. |
 
-Detection/decoding establishes syntax, not source meaning. A matching parser pack is still needed for trustworthy normalized output. An unknown, ambiguous, malformed, or unmapped event can be quarantined rather than guessed into a source category. The original accepted bytes remain linked to the resulting normalized event or quarantine record.
+Decoding establishes syntax, not source meaning. A parser pack still needs to match the source and map its fields. Unknown, malformed, or ambiguous input can be quarantined instead of guessed.
 
 ## Packs, sources, and sinks
 
-- A **pack** (`packs/*.yaml`) describes *what an event means*: match rules, field extraction/types, OCSF mapping, and preservation of unmapped fields. This is how a new supported-format device or app can be onboarded without rebuilding the CLI.
-- A **source** (`sources/*.yaml`) describes *where raw events come from*: currently `cloud_pull`, `kafka_input`, and `syslog_tls`. Basic HTTP, Syslog UDP/TCP, file, and stdin inputs are also available directly through startup flags.
-- A **sink** (`sinks/*.yaml`) describes *where normalized events go*: currently `http_output`, `kafka_output`, `parquet_output`, and `ndjson_output`. `-stdout` and `-output-file` provide simple local outputs without sink YAML.
+### Parser packs
 
-Each family supports `list`, `get <name>`, `validate -f <file.yaml>`, `test -f <file.yaml>`, `apply -f <file.yaml>`, and `rollback`. The first word may also be written `-packs`/`--packs`, `-sources`/`--sources`, or `-sinks`/`--sinks`; the bare words shown below are easier to read:
-
-| Operation | Packs | Sources and sinks |
-|---|---|---|
-| `list` / `get` | Inspect pack definitions (running API if reachable, otherwise local pack files). | Inspect manifests in the respective local directory. |
-| `validate -f` | Check a proposed parser pack before installation. | Parse and validate a proposed resource locally. |
-| `test -f` | Test a pack against `-sample <log-file-or-text>`. | Probe the configured target/path; this can make network or filesystem access. Use only trusted manifests. |
-| `apply -f` | Install a pack into `-packs-dir`, then attempt activation on the local `:9090` control plane; if the daemon is unavailable, it loads on the next startup. | Requires a running `:9090` control plane; validates, applies, and reconciles the resource live. |
-| `rollback` | Restore the previous active pack snapshot through the running control plane. | Restore the previous Source/Sink configuration snapshot through the running control plane. |
+Packs define how WORM recognizes and normalizes a decoded log. The ordinary file workflow is:
 
 ```sh
 worm packs list
 worm packs get network-device-firewall
-worm packs validate -f packs/network-device-firewall.yaml
-worm packs test -f packs/app-payment-gateway.yaml -sample testdata/sources/app-custom-json/valid_after.json
-worm sources list
-worm sources validate -f sources/cloud-pull.yaml
-worm sinks list
-worm sinks validate -f sinks/http-siem.yaml
+worm packs validate -f packs/new-device.yaml
+worm packs test -f packs/new-device.yaml -sample sample.log
+worm packs apply -f packs/new-device.yaml
+worm packs rollback
 ```
 
-The included source/sink examples are disabled until explicitly configured and enabled. `sources apply` and `sinks apply` use `WORM_ADMIN_TOKEN` when one is set for the control API. Pack apply and replay CLI requests do **not** currently send that token, so they may fail against a token-protected control plane; this is a known release limitation, not a reason to leave an exposed management port unauthenticated. See [SECURITY.md](SECURITY.md).
+`apply` normally asks the running management API to validate and activate the pack. Use `--local` with `--packs-dir <dir>` only when that installation is stopped; the change will load on its next startup. Live operations use the default API at port 9090; pack commands accept `--ui <address>` when WORM listens elsewhere. Do not run local changes against a directory owned by a running process.
 
-## Replay: recover an event after adding parser knowledge
-
-Replay is a core WORM workflow. When a recognized transport delivers an event but detection, pack matching, conversion, or schema validation fails, WORM retains its raw bytes and records a quarantine entry instead of silently discarding it. You can then add or correct a YAML pack and reprocess the stored bytes; no source-side resend is required.
-
-1. Start WORM with a management API (`-ui 127.0.0.1:9090`) and keep the database and pack directory from the original ingestion. Use `worm replay` or the Quarantine UI to find a quarantine ID and reason.
-2. Create a pack for the event's supported format, then run `worm packs validate -f <new-pack.yaml>` and `worm packs test -f <new-pack.yaml> -sample <saved-sample>`. The [existing packs](packs/) are examples of the YAML shape.
-3. Run `worm packs apply -f <new-pack.yaml>` to install and activate the pack. In the current CLI, successful activation also requests a bulk quarantine reconciliation; inspect its reported replay counts. If no daemon is running, restart WORM to load the pack first.
-4. If the event remains quarantined, run `worm replay <quarantine-id>` or `worm replay all`. Replay verifies the stored raw hash, decodes the appropriate child record, matches the *current* pack snapshot, normalizes and validates, persists the result, and removes a resolved quarantine entry.
-5. Inspect the event/trace UI or query the management API, then use `worm -db data/worm.db -verify <raw-id>` and `worm -db data/worm.db -verify-event <event-id>` for local consistency checks.
+Marketplace commands are separate from authoring and applying arbitrary local YAML:
 
 ```sh
-worm replay
-worm packs validate -f new-device.yaml
-worm packs test -f new-device.yaml -sample sample.log
-worm packs apply -f new-device.yaml
-worm replay <quarantine-id>
+# Search the catalog cached under ./packs; filters can be combined
+worm marketplace search firewall
+worm marketplace search --vendor Cisco --product ASA --model 5500 --format syslog
+worm marketplace search --installed
+worm marketplace show network-device-asa
+
+# These use the running WORM management API
+worm marketplace refresh
+worm marketplace fetch network-device-asa@1.0.3
+worm packs fetch network-device-asa@1.0.3
+worm packs install network-device-asa@1.0.3
+worm packs outdated
+worm packs upgrade network-device-asa
+worm packs upgrade --all
+worm packs remove network-device-asa
+worm packs rollback
 ```
 
-The placeholders above are intentional: an ID exists only after an actual quarantine, and the new pack must match that event. Bulk replay is for eligible records and can leave failed ones in quarantine. Replay preserves the original raw-event linkage; it cannot repair events lost before WORM accepted them. See [SECURITY.md](SECURITY.md) for current hash, authentication, and durability limits.
+Search and `show` read the local signed catalog/cache under `-packs-dir`; they do not contact the server or internet. `refresh` updates that instance's cache. `fetch` downloads verified bytes without activating them. `install` validates and activates a pack on the running WORM. `remove` deactivates only marketplace-managed or bundled packs from that installation. Ordinary upgrades stay within the current major version and skip pinned packs; choose an exact version to pin it. `worm packs rollback` undoes the most recent pack transaction.
+
+To change a stopped installation explicitly, supported pack mutation commands accept `--local`. For example:
+
+```sh
+worm marketplace import --dir ./offline-snapshot --packs-dir ./packs
+worm packs fetch network-device-asa@1.0.3 --local --packs-dir ./packs
+worm packs install network-device-asa@1.0.3 --local --packs-dir ./packs
+```
+
+Local `fetch` can contact the configured registry only when both `--marketplace-online` and `--marketplace-url` are provided to that command; usually it is simpler to let the running server perform downloads. Offline local install requires that the artifact has already been fetched or imported. `--local` changes files and reports that the pack is available on next startup.
+
+Marketplace options:
+
+| Command | Effect |
+|---|---|
+| `worm marketplace search [text] [filters]` | Search cached catalog. Filters: `--vendor`, `--product`, `--model`, `--category`, `--format`; `--installed` and `--json` are supported. |
+| `worm marketplace show <name>` | Print cached catalog details and releases. |
+| `worm marketplace refresh` | Fetch and verify the latest signed catalog through the daemon. |
+| `worm marketplace fetch <name>[@version]` | Download and verify without activation. |
+| `worm marketplace export --dir <dir>` | Export catalog and cached artifacts for offline transfer. |
+| `worm marketplace import --dir <dir>` | Verify and import an offline snapshot into the selected packs directory. |
+
+`--ui <address>` selects the management API for supported daemon commands; it does not open a browser and is not the marketplace URL. The default is port 9090, so omit it when WORM uses that port. CLI `search` and `show` currently read `-packs-dir` in the CLI's working context; pass `--packs-dir` if the catalog is in a non-default location.
+
+### Sources, sinks, and replay
+
+Sources describe where WORM reads logs; sinks describe where normalized events go. Both support `list`, `get`, `validate -f`, `test -f`, `apply -f`, and `rollback`:
+
+```sh
+worm sources list
+worm sources get aws-cloudtrail-pull
+worm sources validate -f sources/cloud-pull.yaml
+worm sources test -f sources/cloud-pull.yaml
+worm sources apply -f sources/cloud-pull.yaml
+worm sources rollback
+
+worm sinks list
+worm sinks get siem-events
+worm sinks validate -f sinks/http-siem.yaml
+worm sinks test -f sinks/http-siem.yaml
+worm sinks apply -f sinks/http-siem.yaml
+worm sinks rollback
+```
+
+`apply` and `rollback` contact the running management API on port 9090. Use the server's configured admin token for protected operations. Source/sink manifests may connect to external services when tested or enabled; use trusted files and configure secrets through `secretRef` and the documented secret environment/file mechanism.
+
+Unknown, malformed, or ambiguous logs remain in quarantine with their raw bytes. After adding and activating parser knowledge:
+
+```sh
+worm replay                  # list quarantine records
+worm replay QUARANTINE_ID    # replace with an ID from `worm replay`
+worm replay all              # retry all eligible records
+```
+
+Replay uses the current parser snapshot and retains the original raw-event link. Inspect its result in the UI or database. Pack activation can also request reconciliation, so review its reported result before asking for another replay.
+
+## Log simulator and Docker
+
+`logsim` creates sample logs without needing a real device. Build it from source and send a bounded set to a local WORM HTTP listener:
+
+```sh
+mkdir -p bin
+go build -o bin/logsim ./cmd/logsim
+./bin/logsim --source app --scenario mixed --format http-post \
+  --target http://127.0.0.1:8080/api/v1/ingest --rate 5 --count 50
+```
+
+For the complete simulator fleet, native WORM plus Docker simulators, and the air-gap image bundle, see the current commands in [README.md](README.md#docker-and-simulation).
+
+## Other documentation
+
+[MARKETPLACE.md](MARKETPLACE.md) explains the marketplace purpose, owner publishing workflow, signing keys, and customer install flow. [SECURITY.md](SECURITY.md) covers deployment boundaries, credentials, and integrity limits.

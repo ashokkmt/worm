@@ -427,7 +427,7 @@ func main() {
 
 	// Detached background mode
 	if *detached {
-		cli.RunDaemonMode(cli.DefaultPIDFile, cli.DefaultLogFile, *uiAddr)
+		cli.RunDaemonMode(cli.DefaultPIDFile, cli.DefaultLogFile, *uiAddr, *packsDir, *marketplaceOnline, *marketplaceURL)
 		return
 	}
 

@@ -3,8 +3,31 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestDaemonStartupBanner(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		uiAddr            string
+		marketplaceOnline bool
+		wantUI            string
+		wantMarketplace   string
+	}{
+		{name: "online", uiAddr: "127.0.0.1:19090", marketplaceOnline: true, wantUI: "http://127.0.0.1:19090", wantMarketplace: "online (network access only for explicit marketplace commands)"},
+		{name: "offline and UI disabled", uiAddr: "none", wantUI: "disabled", wantMarketplace: "offline (bundled catalog and verified cache only)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := daemonStartupBanner(123, "./worm", tc.uiAddr, "data/worm.log", "packs", tc.marketplaceOnline, "https://registry.example.test")
+			for _, want := range []string{tc.wantUI, tc.wantMarketplace, "./worm packs apply -f <pack.yaml>", "./worm marketplace refresh", "./worm packs install <name>[@version]", "https://registry.example.test"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("daemon startup banner missing %q:\n%s", want, got)
+				}
+			}
+		})
+	}
+}
 
 func TestGetBaseURL(t *testing.T) {
 	tests := []struct {

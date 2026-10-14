@@ -14,4 +14,14 @@ The management config response no longer returns the configured admin token; raw
 
 For a local-only native run, keep the defaults or explicitly use `-http 127.0.0.1:8080 -ui 127.0.0.1:9090` and disable unused Syslog listeners with `-syslog-udp none -syslog-tcp none -syslog-tls none`. Restrict database and file permissions; avoid putting credentials in shell history or checked-in YAML. Source/sink manifests should use `secretRef` and private environment/file secrets. Treat hash verification as a local consistency check, not proof against someone who can replace both data and stored hashes.
 
+## Parser marketplace trust and keys
+
+The official parser marketplace is a static registry at [https://ashokkmt.github.io/worm](https://ashokkmt.github.io/worm). Marketplace networking is disabled by default. Enable it only on a WORM instance that should refresh or download packs, using `--marketplace-online` and, for a private registry, `--marketplace-url <registry-root>`. WORM verifies the Ed25519 catalog signature against public keys embedded in the binary, then checks each downloaded YAML against the SHA-256 digest in that signed catalog before validating and activating it. Marketplace packs are YAML data; they do not run installer scripts or executable extensions.
+
+The owner must keep the Ed25519 private signing key outside Git, release archives, generated site files, customer machines, and chat transcripts. Local publishing reads the protected key file; GitHub Actions reads the key from the protected `marketplace-publish` environment secret `WORM_MARKETPLACE_SIGNING_KEY`. Restrict who can run or approve that environment. Never expose the secret to untrusted pull requests. Published versions are immutable; release changed YAML under a new version and retain old artifact bytes.
+
+Marketplace search is public. Refresh, fetch, install, upgrade, remove, and rollback requests that mutate the running instance require that customer's own WORM admin token. Configure it on the WORM server with `WORM_ADMIN_TOKEN` or `-admin-token`; set the same token in the operator's CLI environment or UI session when needed. This token authorizes only the customer's local management API. It is not sent to GitHub Pages and does not grant official publishing rights. Do not share it with the pack owner or include it in issue reports.
+
+Review a pack's vendor/model coverage and test its matching behavior before installing it. A valid signature proves the catalog was signed by a trusted key and an artifact matches its digest; it does not prove the pack's rules are correct for every source. An outdated offline catalog also cannot show later withdrawals until it is refreshed or replaced.
+
 Do not rely on this release as the only archive for regulated, forensic, or loss-intolerant logs. Keep an independent source archive and validate delivery and recovery in your own environment.

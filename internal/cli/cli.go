@@ -51,7 +51,7 @@ func ReadPID(pidFile string) (int, error) {
 	return pid, nil
 }
 
-func RunDaemonMode(pidFile, logFile string, uiAddr string) {
+func RunDaemonMode(pidFile, logFile string, uiAddr, packsDir string, marketplaceOnline bool, marketplaceURL string) {
 	if os.Getenv("WORM_DAEMON") == "1" {
 		return
 	}
@@ -115,20 +115,51 @@ func RunDaemonMode(pidFile, logFile string, uiAddr string) {
 	// Write PID file
 	_ = os.WriteFile(pidFile, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0644)
 
-	fmt.Printf("\n[WORM] Engine daemon started successfully in background!\n")
-	fmt.Printf("  * Process ID:      %d\n", cmd.Process.Pid)
-	fmt.Printf("  * Management UI:   %s\n", GetBaseURL(uiAddr))
-	fmt.Printf("  * Logging Stream:  %s\n", logFile)
-	fmt.Printf("  * Quick Commands:\n")
-	fmt.Printf("      ./bin/worm packs list              # List active parser packs\n")
-	fmt.Printf("      ./bin/worm packs get <name>        # View pack YAML definition\n")
-	fmt.Printf("      ./bin/worm packs apply <pack.yaml> # Install & reconcile new pack\n")
-	fmt.Printf("      ./bin/worm sources list            # List active ingestion sources\n")
-	fmt.Printf("      ./bin/worm sinks list              # List active delivery sinks\n")
-	fmt.Printf("      ./bin/worm replay [id|all]         # Manage or replay quarantined DLQ records\n")
-	fmt.Printf("      ./bin/worm status                  # Check background daemon health\n")
-	fmt.Printf("      ./bin/worm stop                    # Stop the background daemon\n\n")
+	command := os.Args[0]
+	if command == "" {
+		command = "worm"
+	}
+	fmt.Print(daemonStartupBanner(cmd.Process.Pid, command, uiAddr, logFile, packsDir, marketplaceOnline, marketplaceURL))
 	os.Exit(0)
+}
+
+func daemonStartupBanner(pid int, command, uiAddr, logFile, packsDir string, marketplaceOnline bool, marketplaceURL string) string {
+	ui := GetBaseURL(uiAddr)
+	if uiAddr == "none" {
+		ui = "disabled"
+	}
+	marketplace := "offline (bundled catalog and verified cache only)"
+	if marketplaceOnline {
+		marketplace = "online (network access only for explicit marketplace commands)"
+	}
+	return fmt.Sprintf(`
+[WORM] Engine daemon started successfully in background!
+  * Process ID:      %d
+  * Management UI:   %s
+  * Parser packs:    %s
+  * Logging Stream:  %s
+  * Marketplace:     %s
+  * Registry URL:    %s
+  * Quick Commands:
+      %s packs list                       # List active parser packs
+      %s packs get <name>                 # View a pack YAML definition
+      %s packs apply -f <pack.yaml>       # Validate and activate a local pack
+      %s marketplace search [query]       # Search the available catalog
+      %s marketplace refresh              # Refresh catalog (online mode required)
+      %s packs install <name>[@version]   # Install and activate a marketplace pack
+      %s packs remove <name>              # Deactivate an installed marketplace pack
+      %s sources list                     # List active ingestion sources
+      %s sinks list                       # List active delivery sinks
+      %s replay [id|all]                  # Manage or replay quarantined records
+      %s status                           # Check daemon health
+      %s stop                             # Stop the background daemon
+
+  * Commands use the default management address; pass --ui and --packs-dir
+    where supported when this daemon uses non-default values. Marketplace changes
+    require WORM_ADMIN_TOKEN or --admin-token where that option is supported.
+
+`, pid, ui, packsDir, logFile, marketplace, marketplaceURL,
+		command, command, command, command, command, command, command, command, command, command, command, command)
 }
 
 func StopDaemon(pidFile string) {

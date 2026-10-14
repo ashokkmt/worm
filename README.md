@@ -6,7 +6,7 @@
 
 WORM accepts heterogeneous logs, keeps their original bytes in a local SQLite store, and converts recognized records into a versioned, OCSF-based JSON event with a link back to the original. Unknown, malformed, or ambiguous records are quarantined for inspection and replay after a parser pack is updated. This is a log preprocessor, not a SIEM, search engine, or production security boundary.
 
-The project includes a Go CLI/server, an embedded web management UI, YAML parser/source/sink definitions, and a synthetic log generator (`logsim`). It can run on a Linux, macOS, or Windows server directly, in Docker, or without internet access after the binary and its configuration assets have been transferred. See [security guidance](SECURITY.md) before connecting real log sources.
+The project includes a Go CLI/server, an embedded web management UI, YAML parser/source/sink definitions, and a synthetic log generator (`logsim`). Its signed parser marketplace lets users discover and install owner-published packs; internet access is opt-in. WORM can also run offline after the binary and configuration assets have been transferred. See [security guidance](SECURITY.md) before connecting real log sources.
 
 ## Demo video
 
@@ -23,17 +23,19 @@ git clone https://github.com/ashokkmt/worm.git
 cd worm
 npm ci --prefix web
 npm run build --prefix web
-go build -o worm ./cmd/worm
-./worm --version
-./worm -syslog-udp none -syslog-tcp none -syslog-tls none -http 127.0.0.1:8080 -ui 127.0.0.1:9090 -inbox none -stdout=false
+mkdir -p bin
+go build -o bin/worm ./cmd/worm
+./bin/worm --version
+./bin/worm -syslog-udp none -syslog-tcp none -syslog-tls none -http 127.0.0.1:8080 -ui 127.0.0.1:9090 -inbox none -stdout=false
 ```
 
 On Windows PowerShell, replace the last three commands with:
 
 ```powershell
-go build -o worm.exe ./cmd/worm
-.\worm.exe --version
-.\worm.exe -syslog-udp none -syslog-tcp none -syslog-tls none -http 127.0.0.1:8080 -ui 127.0.0.1:9090 -inbox none -stdout=false
+New-Item -ItemType Directory -Force bin | Out-Null
+go build -o bin/worm.exe ./cmd/worm
+.\bin\worm.exe --version
+.\bin\worm.exe -syslog-udp none -syslog-tcp none -syslog-tls none -http 127.0.0.1:8080 -ui 127.0.0.1:9090 -inbox none -stdout=false
 ```
 
 In another terminal, open `http://127.0.0.1:9090` for the UI or send a sample event:
@@ -49,10 +51,10 @@ Native listeners default to loopback (`127.0.0.1`) so they are not remotely reac
 For an entirely local, one-shot example without network listeners:
 
 ```sh
-./worm -file testdata/sources/network-device-firewall/valid_session.log -syslog-udp none -syslog-tcp none -syslog-tls none -http none -ui none -inbox none -stdout=false
+./bin/worm -file testdata/sources/network-device-firewall/valid_session.log -syslog-udp none -syslog-tcp none -syslog-tls none -http none -ui none -inbox none -stdout=false
 ```
 
-On Windows, use `.\worm.exe` in place of `./worm`.
+On Windows, use `.\bin\worm.exe` in place of `./bin/worm`. These source-build commands keep the executable in `bin/`; downloaded release archives intentionally contain `worm` at the archive root, so run `./worm` (or `.\worm.exe`) from the extracted release folder.
 
 ## Run a GitHub Release binary
 
@@ -80,6 +82,19 @@ Set-Location .\worm-release
 
 The UI is embedded in the binary. Cloud, Kafka, and external output integrations still need their respective services and credentials when enabled. For building your own tagged six-platform archives, see [`scripts/build-release.sh`](scripts/build-release.sh) and [`scripts/build-release.ps1`](scripts/build-release.ps1).
 
+### Start with marketplace access
+
+Marketplace access is off by default. Add these startup flags when you want this WORM instance to refresh its catalog or download packs. WORM contacts the registry only for explicit marketplace actions such as refresh, fetch, install, or upgrade; it does not poll in the background.
+
+```sh
+./bin/worm -syslog-udp none -syslog-tcp none -syslog-tls none \
+  -http 127.0.0.1:8080 -ui 127.0.0.1:9090 -inbox none -stdout=false \
+  --marketplace-online \
+  --marketplace-url https://ashokkmt.github.io/worm
+```
+
+Without `--marketplace-online`, WORM uses its signed bundled catalog and any verified cached downloads. Customers who manage packs through the UI or CLI need an admin token configured on their own WORM instance; the marketplace itself is public and never receives that token. See [MARKETPLACE.md](MARKETPLACE.md) for installation, publishing, and signing details, and [CLI.md](CLI.md) for every startup option and command.
+
 ## What WORM handles
 
 | Area | Current capability |
@@ -98,7 +113,7 @@ The full, flag-by-flag guide is [CLI.md](CLI.md). It explains every startup argu
 
 The seven current decoder families are **Syslog, JSON, XML, CSV, CEF, LEEF, and declarative proprietary/application text**. Intake transport is separate from decoding: HTTP, a file, Kafka, or stdin can carry a supported format. A decoder parses syntax; a YAML parser pack identifies the source and maps its fields to the normalized event. [CLI.md's format table](CLI.md#decoded-formats) explains each one.
 
-The three YAML directories have distinct jobs: `packs/` say **what a log means**, `sources/` say **where raw logs come from**, and `sinks/` say **where normalized events go**. You can list, inspect, validate, test, apply, and roll back each resource family. [CLI.md](CLI.md#packs-sources-and-sinks) shows the exact syntax and the current live-apply limitations.
+The three YAML directories have distinct jobs: `packs/` say **what a log means**, `sources/` say **where raw logs come from**, and `sinks/` say **where normalized events go**. You can list, inspect, validate, test, apply, and roll back each resource family. [CLI.md](CLI.md#packs-sources-and-sinks) shows the exact syntax and the current live-apply behavior.
 
 Replay is the recovery path for an event WORM accepted but could not normalize. Its original bytes and quarantine reason remain in the database. After you validate and activate a matching pack, replay processes those stored bytes with the current pack without asking the source to resend them:
 
@@ -107,23 +122,14 @@ worm replay                         # list quarantined records and their IDs
 worm packs validate -f new-device.yaml
 worm packs test -f new-device.yaml -sample sample.log
 worm packs apply -f new-device.yaml
-worm replay <quarantine-id>         # if it remains quarantined; or: worm replay all
+worm replay QUARANTINE_ID           # replace with an ID from `worm replay`; or: worm replay all
 ```
 
 ### Parser marketplace
 
-WORM ships a signed offline catalog built from the parser packs in `packs/`. Search it with `worm marketplace search <term>` or inspect a pack with `worm marketplace show <name>`. To refresh the catalog or download/install a missing release, start WORM with `--marketplace-online`; API changes require `--admin-token` or `WORM_ADMIN_TOKEN`.
+Use `worm marketplace search` and `show` to browse the catalog cached under the selected packs directory. Use `refresh` to update it, `fetch` to download without activation, `worm packs install` to validate and activate a release, and `remove` to deactivate a marketplace-managed pack from that WORM installation. These commands do not change the repository's owner source files. See [MARKETPLACE.md](MARKETPLACE.md) for the customer and owner workflows.
 
-```sh
-worm marketplace search firewall
-worm marketplace refresh
-worm packs install network-device-asa@1.0.3
-worm packs remove network-device-asa
-```
-
-The marketplace publisher is owner-managed through `.github/workflows/marketplace.yml`. Configure an owner-required reviewer for the `marketplace-publish` GitHub environment, add the durable owner-held base64 Ed25519 private key as `WORM_MARKETPLACE_SIGNING_KEY`, and enable GitHub Pages publication. WORM retains trust in `worm-market-2026` and also trusts the new `worm-market-2026-v2` owner key. Add vendor/product/model and per-release coverage in `marketplace/metadata.json`; preserve prior release YAML under `marketplace/releases/<name>/<version>.yaml`. The committed signed catalog is the binary seed and is checked against shipped packs. The embedded UI and CLI use the same signed catalog; marketplace access remains opt-in.
-
-These are example placeholders: the pack must actually match a quarantined event. Pack activation currently also requests bulk replay; check its report before replaying an ID manually. Replay and pack activation need the running management API, and their CLI token handling has a known limitation described in [CLI.md](CLI.md#replay-recover-an-event-after-adding-parser-knowledge) and [SECURITY.md](SECURITY.md). The `-verify` commands compare stored bytes/events to hashes in the same database; they are consistency checks, not independently anchored tamper-proof evidence.
+These are example placeholders: the pack must actually match a quarantined event. Pack activation currently also requests quarantine reconciliation; check its report before replaying an ID manually. Replay and live pack activation need the running management API. The `-verify` commands compare stored bytes/events to hashes in the same database; they are consistency checks, not independently anchored tamper-proof evidence.
 
 ## Docker and simulation
 
@@ -140,13 +146,13 @@ Open `http://127.0.0.1:9090`. The Compose file maps ports 1514 UDP/TCP, 8080, an
 
 To run WORM natively and only the simulator fleet in Docker, start WORM with `-syslog-udp :1514 -syslog-tcp :1514 -http :8080 -ui :9090 -inbox data/inbox`, then run `docker compose -f simulator.yaml up --build`. That simulator file sends to `host.docker.internal`; it contains seven standard demo sources (firewall, ASA, SSHD, IDS, web server, app, database). Stop with `docker compose -f simulator.yaml down`.
 
-Without Docker, build `logsim` with `go build -o logsim ./cmd/logsim` (Windows: `logsim.exe`) and run a bounded HTTP test while WORM is listening:
+Without Docker, build `logsim` into `bin/` with `mkdir -p bin && go build -o bin/logsim ./cmd/logsim` (Windows: `New-Item -ItemType Directory -Force bin; go build -o bin/logsim.exe ./cmd/logsim`) and run a bounded HTTP test while WORM is listening:
 
 ```sh
-./logsim --source app --scenario normal --format http-post --target http://127.0.0.1:8080/api/v1/ingest --rate 5 --count 50
+./bin/logsim --source app --scenario normal --format http-post --target http://127.0.0.1:8080/api/v1/ingest --rate 5 --count 50
 ```
 
-`logsim --source` accepts `firewall`, `asa`, `sshd`, `ids`, `webserver`, `app`, `database`, or `all`; it can emit to stdout, syslog UDP/TCP/TLS, HTTP POST, or files. The data is synthetic, not an enterprise source qualification. For the published measurements and repeatable 10,000-event methods, use [benchmarking.md](benchmarking.md).
+`logsim --source` accepts `firewall`, `asa`, `sshd`, `ids`, `webserver`, `app`, `database`, or `all`; it can emit to stdout, syslog UDP/TCP/TLS, HTTP POST, or files. The data is synthetic, not an enterprise source qualification. For the published measurements and repeatable 10,000-event methods, use [BENCHMARKING.md](BENCHMARKING.md).
 
 ## Deployment modes and safety
 
