@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-033-okta-system-log
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 33: Okta Identity Engine; System Log event JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"client\":"
+  fields:
+    event_time:
+      from: "published"
+      type: timestamp
+    event_action:
+      from: "eventType"
+      type: string
+  map:
+    event_time: event.time
+    event_action: event.action
+  preserveUnmapped: true

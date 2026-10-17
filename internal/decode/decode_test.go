@@ -122,6 +122,40 @@ func TestSyslogDecoder_RFC3164(t *testing.T) {
 	}
 }
 
+func TestSyslogDecoder_RFC3164PaddedSingleDigitDay(t *testing.T) {
+	decoder := NewSyslogDecoder()
+	records, err := decoder.Decode([]byte("<166>Jun  1 10:00:00 asa-lab sshd[1234]: login failed"))
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if got := records[0].Headers["syslog_host"]; got != "asa-lab" {
+		t.Fatalf("expected host asa-lab, got %v", got)
+	}
+	if got := records[0].Headers["syslog_time"]; got != "Jun 1 10:00:00" {
+		t.Fatalf("expected normalized syslog time, got %v", got)
+	}
+	if got := records[0].Fields["message"]; got != "login failed" {
+		t.Fatalf("expected message body, got %v", got)
+	}
+}
+
+func TestTextDecoderQuotedKeyValueFields(t *testing.T) {
+	decoder := NewTextDecoder()
+	records, err := decoder.Decode([]byte(`timestamp="2026-06-01T10:00:00Z" message="login failed for guest"`))
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if got := records[0].Fields["timestamp"]; got != "2026-06-01T10:00:00Z" {
+		t.Fatalf("expected unquoted timestamp, got %v", got)
+	}
+	if got := records[0].Fields["message"]; got != "login failed for guest" {
+		t.Fatalf("expected quoted value with spaces, got %v", got)
+	}
+	if _, err := decoder.Decode([]byte(`event="unterminated`)); err == nil {
+		t.Fatal("expected an unterminated quoted key=value value to fail")
+	}
+}
+
 func TestSyslogDecoder_Malformed(t *testing.T) {
 	fixture := loadFixture(t, "testdata/formats/syslog/malformed_truncated.txt")
 	decoder := NewSyslogDecoder()
@@ -268,6 +302,40 @@ func TestCSVDecoder_Malformed(t *testing.T) {
 	_, err := decoder.Decode(fixture)
 	if err == nil {
 		t.Errorf("expected error decoding malformed unquoted CSV, got nil")
+	}
+}
+
+func TestCSVDecoder_HeaderlessSingleRow(t *testing.T) {
+	decoder := NewCSVDecoder()
+	input := []byte("2026-06-01 10:00:00.000 UTC,user,db,1234,192.0.2.10:51000,session,1,SELECT\n")
+	records, err := decoder.Decode(input)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("expected headerless row as one record, got %d", len(records))
+	}
+	if records[0].Fields["column_0"] != "2026-06-01 10:00:00.000 UTC" || records[0].Fields["column_7"] != "SELECT" {
+		t.Fatalf("unexpected headerless columns: %v", records[0].Fields)
+	}
+}
+
+func TestCSVDecoder_DoesNotClaimCommaTextAsCSV(t *testing.T) {
+	text := []byte("1780308000: New client connected from 192.0.2.10:51000 as lab-sensor (p2, c1, k60).")
+	if got := NewCSVDecoder().Detect(text); got != 0 {
+		t.Fatalf("expected plain text not to be detected as CSV, got %f", got)
+	}
+}
+
+func TestTextDecoder_AcceptsUnclassifiedLogLines(t *testing.T) {
+	decoder := NewTextDecoder()
+	input := []byte("2026-06-01 10:00:00 server started successfully")
+	if got := decoder.Detect(input); got < 0.50 {
+		t.Fatalf("expected generic text detection above threshold, got %f", got)
+	}
+	records, err := decoder.Decode(input)
+	if err != nil || len(records) != 1 || records[0].Fields["message"] != string(input) {
+		t.Fatalf("expected one raw text message, records=%v err=%v", records, err)
 	}
 }
 

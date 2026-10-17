@@ -1,134 +1,2612 @@
 {
   "packs": {
     "app-payment-gateway": {
+      "vendor": "",
       "product": "E-Commerce Payment Gateway",
-      "tags": ["payments", "application"]
+      "models": null,
+      "tags": [
+        "payments",
+        "application"
+      ]
     },
     "appliance-proprietary-text": {
+      "vendor": "",
       "product": "Proprietary hardware appliance",
-      "tags": ["appliance", "health"]
+      "models": null,
+      "tags": [
+        "appliance",
+        "health"
+      ]
     },
     "cloud-audit": {
+      "vendor": "",
       "product": "Vendor-neutral cloud management and API audit events",
-      "tags": ["cloud", "audit"]
+      "models": null,
+      "tags": [
+        "cloud",
+        "audit"
+      ]
     },
     "container-runtime": {
+      "vendor": "",
       "product": "Container runtime",
-      "tags": ["container", "runtime"]
+      "models": null,
+      "tags": [
+        "container",
+        "runtime"
+      ]
     },
     "database-audit": {
+      "vendor": "",
       "product": "PostgreSQL and MySQL database audit logs",
-      "tags": ["database", "audit"]
+      "models": null,
+      "tags": [
+        "database",
+        "audit"
+      ]
     },
     "endpoint-ids-alert": {
-      "product": "Suricata and Snort IDS alerts",
-      "tags": ["ids", "intrusion-detection"]
+      "vendor": "",
+      "product": "CEF security and intrusion-detection alerts",
+      "models": null,
+      "tags": [
+        "ids",
+        "intrusion-detection",
+        "checkpoint",
+        "quantum",
+        "cef"
+      ]
     },
     "iam-auth-leef": {
+      "vendor": "",
       "product": "Identity and access management authentication",
-      "tags": ["identity", "authentication"]
+      "models": null,
+      "tags": [
+        "identity",
+        "authentication"
+      ]
     },
     "iot-gateway-xml": {
+      "vendor": "",
       "product": "Industrial IoT gateway",
-      "tags": ["iot", "gateway"]
+      "models": null,
+      "tags": [
+        "iot",
+        "gateway"
+      ]
+    },
+    "market-001-panos-traffic": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS NGFW, PA-Series/VM-Series",
+      "models": [
+        "PA-Series",
+        "VM-Series"
+      ],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "traffic"
+      ]
+    },
+    "market-002-panos-threat": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS NGFW",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "threat"
+      ]
+    },
+    "market-003-panos-url": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS NGFW",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "url"
+      ]
+    },
+    "market-004-panos-system": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS NGFW",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "system"
+      ]
+    },
+    "market-005-fortigate-forward": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "forward"
+      ]
+    },
+    "market-006-fortigate-system": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "system"
+      ]
+    },
+    "market-007-fortigate-vpn": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "vpn"
+      ]
+    },
+    "market-008-fortigate-webfilter": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "webfilter"
+      ]
+    },
+    "market-009-fortigate-ips": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "ips"
+      ]
+    },
+    "market-013-cisco-ftd-connection": {
+      "vendor": "Cisco",
+      "product": "Secure Firewall Threat Defense 7.x",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "syslog",
+        "cisco",
+        "ftd",
+        "connection"
+      ]
+    },
+    "market-015-checkpoint-json": {
+      "vendor": "Check Point",
+      "product": "Quantum R81",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "json",
+        "checkpoint"
+      ]
+    },
+    "market-016-checkpoint-leef": {
+      "vendor": "Check Point",
+      "product": "Quantum R81",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "leef",
+        "checkpoint"
+      ]
+    },
+    "market-017-junos-flow-create": {
+      "vendor": "Juniper Networks",
+      "product": "SRX300/SRX400/SRX1500 family",
+      "models": [
+        "SRX300",
+        "SRX400",
+        "SRX1500"
+      ],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "junos",
+        "flow",
+        "create"
+      ]
+    },
+    "market-018-junos-commit": {
+      "vendor": "Juniper Networks",
+      "product": "Junos device",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "junos",
+        "commit"
+      ]
+    },
+    "market-019-sophos-firewall": {
+      "vendor": "Sophos",
+      "product": "Firewall XGS / SFOS",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "sophos",
+        "firewall"
+      ]
+    },
+    "market-020-meraki-mx-flows": {
+      "vendor": "Cisco",
+      "product": "Meraki MX84 / MX firmware family",
+      "models": [
+        "MX84"
+      ],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "meraki",
+        "mx",
+        "flows"
+      ]
+    },
+    "market-021-meraki-mr-association": {
+      "vendor": "Cisco",
+      "product": "Meraki MR33 / MR firmware family",
+      "models": [
+        "MR33"
+      ],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "meraki",
+        "mr",
+        "association"
+      ]
+    },
+    "market-022-iosxe-system": {
+      "vendor": "Cisco",
+      "product": "IOS XE 17.x (Catalyst/ISR)",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "iosxe",
+        "system"
+      ]
+    },
+    "market-023-aws-cloudtrail-management": {
+      "vendor": "Amazon Web Services",
+      "product": "CloudTrail",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "aws",
+        "cloudtrail",
+        "management"
+      ]
+    },
+    "market-024-aws-cloudtrail-s3": {
+      "vendor": "Amazon Web Services",
+      "product": "CloudTrail",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "aws",
+        "cloudtrail",
+        "s3"
+      ]
+    },
+    "market-025-aws-vpc-flow": {
+      "vendor": "Amazon Web Services",
+      "product": "VPC Flow Logs",
+      "models": [],
+      "tags": [
+        "cloud",
+        "text",
+        "aws",
+        "vpc",
+        "flow"
+      ]
+    },
+    "market-026-aws-network-firewall-alert": {
+      "vendor": "Amazon Web Services",
+      "product": "Network Firewall",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "json",
+        "aws",
+        "network",
+        "firewall",
+        "alert"
+      ]
+    },
+    "market-027-aws-waf": {
+      "vendor": "Amazon Web Services",
+      "product": "WAF",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "aws",
+        "waf"
+      ]
+    },
+    "market-028-azure-activity": {
+      "vendor": "Microsoft",
+      "product": "Azure",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "azure",
+        "activity"
+      ]
+    },
+    "market-029-entra-signin": {
+      "vendor": "Microsoft",
+      "product": "Entra ID",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "entra",
+        "signin"
+      ]
+    },
+    "market-030-gcp-admin-audit": {
+      "vendor": "Google Cloud",
+      "product": "Google Cloud",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "admin",
+        "audit"
+      ]
+    },
+    "market-031-gcp-vpc-flow": {
+      "vendor": "Google Cloud",
+      "product": "VPC Flow Logs",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "vpc",
+        "flow"
+      ]
+    },
+    "market-032-cloudflare-http": {
+      "vendor": "Cloudflare",
+      "product": "Zone Logpush",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "cloudflare",
+        "http"
+      ]
+    },
+    "market-033-okta-system-log": {
+      "vendor": "Okta",
+      "product": "Identity Engine",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "okta",
+        "system",
+        "log"
+      ]
+    },
+    "market-034-duo-authentication": {
+      "vendor": "Cisco",
+      "product": "Admin Panel",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "duo",
+        "authentication"
+      ]
+    },
+    "market-035-defender-process": {
+      "vendor": "Microsoft",
+      "product": "Defender for Endpoint",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "json",
+        "defender",
+        "process"
+      ]
+    },
+    "market-036-windows-service-state": {
+      "vendor": "Microsoft",
+      "product": "Service Control Manager",
+      "models": [],
+      "tags": [
+        "os",
+        "xml",
+        "windows",
+        "service",
+        "state"
+      ]
+    },
+    "market-038-postgres-csv": {
+      "vendor": "PostgreSQL",
+      "product": "17",
+      "models": [],
+      "tags": [
+        "database",
+        "csv",
+        "postgres"
+      ]
+    },
+    "market-040-kubernetes-audit": {
+      "vendor": "Kubernetes",
+      "product": "API server",
+      "models": [],
+      "tags": [
+        "container",
+        "json",
+        "kubernetes",
+        "audit"
+      ]
+    },
+    "market-041-cloudfront-standard": {
+      "vendor": "Amazon Web Services",
+      "product": "CloudFront distribution standard access logs",
+      "models": [],
+      "tags": [
+        "cloud",
+        "csv",
+        "cloudfront",
+        "standard"
+      ]
+    },
+    "market-042-azure-nsg-flow": {
+      "vendor": "Microsoft",
+      "product": "Network Watcher NSG Flow Logs v2",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "azure",
+        "nsg",
+        "flow"
+      ]
+    },
+    "market-043-entra-directory-audit": {
+      "vendor": "Microsoft",
+      "product": "Entra ID",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "entra",
+        "directory",
+        "audit"
+      ]
+    },
+    "market-044-mysql-error": {
+      "vendor": "Oracle",
+      "product": "8.0 server",
+      "models": [],
+      "tags": [
+        "database",
+        "json",
+        "mysql",
+        "error"
+      ]
+    },
+    "market-045-mysql-enterprise-audit": {
+      "vendor": "Oracle",
+      "product": "Enterprise Audit",
+      "models": [],
+      "tags": [
+        "database",
+        "json",
+        "mysql",
+        "enterprise",
+        "audit"
+      ]
+    },
+    "market-046-mysql-general-query": {
+      "vendor": "Oracle",
+      "product": "8.0 server",
+      "models": [],
+      "tags": [
+        "database",
+        "text",
+        "mysql",
+        "general",
+        "query"
+      ]
+    },
+    "market-047-oracle-unified-audit": {
+      "vendor": "Oracle",
+      "product": "Database",
+      "models": [],
+      "tags": [
+        "database",
+        "json",
+        "oracle",
+        "unified",
+        "audit"
+      ]
+    },
+    "market-048-apache-error": {
+      "vendor": "Apache Software Foundation",
+      "product": "HTTP Server 2.4",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "apache",
+        "error"
+      ]
+    },
+    "market-049-iis-w3c": {
+      "vendor": "Microsoft",
+      "product": "IIS",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "iis",
+        "w3c"
+      ]
+    },
+    "market-050-haproxy-http": {
+      "vendor": "HAProxy Technologies",
+      "product": "2.x",
+      "models": [],
+      "tags": [
+        "server",
+        "syslog",
+        "haproxy",
+        "http"
+      ]
+    },
+    "market-051-envoy-access": {
+      "vendor": "Envoy Project",
+      "product": "Proxy",
+      "models": [],
+      "tags": [
+        "server",
+        "json",
+        "envoy",
+        "access"
+      ]
+    },
+    "market-052-docker-events": {
+      "vendor": "Docker",
+      "product": "Engine",
+      "models": [],
+      "tags": [
+        "container",
+        "json",
+        "docker",
+        "events"
+      ]
+    },
+    "market-053-sysmon-process": {
+      "vendor": "Microsoft",
+      "product": "Sysmon",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "xml",
+        "sysmon",
+        "process"
+      ]
+    },
+    "market-054-sysmon-network": {
+      "vendor": "Microsoft",
+      "product": "Sysmon",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "xml",
+        "sysmon",
+        "network"
+      ]
+    },
+    "market-055-windows-logon-success": {
+      "vendor": "Microsoft",
+      "product": "Security Auditing",
+      "models": [],
+      "tags": [
+        "os",
+        "xml",
+        "windows",
+        "logon",
+        "success"
+      ]
+    },
+    "market-056-windows-process": {
+      "vendor": "Microsoft",
+      "product": "Security Auditing",
+      "models": [],
+      "tags": [
+        "os",
+        "xml",
+        "windows",
+        "process"
+      ]
+    },
+    "market-057-linux-audit-auth": {
+      "vendor": "Linux",
+      "product": "auditd",
+      "models": [],
+      "tags": [
+        "os",
+        "text",
+        "linux",
+        "audit",
+        "auth"
+      ]
+    },
+    "market-058-sudo-command": {
+      "vendor": "Linux",
+      "product": "sudo",
+      "models": [],
+      "tags": [
+        "os",
+        "syslog",
+        "sudo",
+        "command"
+      ]
+    },
+    "market-059-meraki-ms-port": {
+      "vendor": "Cisco",
+      "product": "Meraki MS220-8P / MS firmware family",
+      "models": [
+        "MS220-8P"
+      ],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "meraki",
+        "ms",
+        "port"
+      ]
+    },
+    "market-060-arista-eos": {
+      "vendor": "Arista Networks",
+      "product": "EOS switches",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "arista",
+        "eos"
+      ]
+    },
+    "market-061-fortiweb-waf": {
+      "vendor": "Fortinet",
+      "product": "FortiWeb 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortiweb",
+        "waf"
+      ]
+    },
+    "market-062-sophos-ips": {
+      "vendor": "Sophos",
+      "product": "Firewall XGS / SFOS 22",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "sophos",
+        "ips"
+      ]
+    },
+    "market-063-junos-flow-close": {
+      "vendor": "Juniper Networks",
+      "product": "SRX",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "junos",
+        "flow",
+        "close"
+      ]
+    },
+    "market-064-panos-globalprotect": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "globalprotect"
+      ]
+    },
+    "market-065-panos-config": {
+      "vendor": "Palo Alto Networks",
+      "product": "PAN-OS",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "panos",
+        "config"
+      ]
+    },
+    "market-066-fortigate-antivirus": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "antivirus"
+      ]
+    },
+    "market-067-fortigate-local": {
+      "vendor": "Fortinet",
+      "product": "FortiGate FortiOS 7.4",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortigate",
+        "local"
+      ]
+    },
+    "market-068-cisco-ftd-intrusion": {
+      "vendor": "Cisco",
+      "product": "Secure Firewall Threat Defense 7.x",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "cisco",
+        "ftd",
+        "intrusion"
+      ]
+    },
+    "market-069-aws-cloudtrail-network": {
+      "vendor": "Amazon Web Services",
+      "product": "CloudTrail",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "aws",
+        "cloudtrail",
+        "network"
+      ]
+    },
+    "market-070-aws-network-firewall-flow": {
+      "vendor": "Amazon Web Services",
+      "product": "Network Firewall",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "aws",
+        "network",
+        "firewall",
+        "flow"
+      ]
+    },
+    "market-071-gcp-data-audit": {
+      "vendor": "Google Cloud",
+      "product": "Google Cloud",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "data",
+        "audit"
+      ]
+    },
+    "market-072-gcp-dns": {
+      "vendor": "Google Cloud",
+      "product": "DNS",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "dns"
+      ]
+    },
+    "market-073-cloudflare-firewall": {
+      "vendor": "Cloudflare",
+      "product": "Logpush",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "cloudflare",
+        "firewall"
+      ]
+    },
+    "market-074-defender-network": {
+      "vendor": "Microsoft",
+      "product": "Defender for Endpoint",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "json",
+        "defender",
+        "network"
+      ]
+    },
+    "market-075-cisco-ise-radius": {
+      "vendor": "Cisco",
+      "product": "Identity Services Engine (ISE) 3.x",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "cisco",
+        "ise",
+        "radius"
+      ]
+    },
+    "market-076-fortimail-admin": {
+      "vendor": "Fortinet",
+      "product": "FortiMail appliance/VM 7.x",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "text",
+        "fortimail",
+        "admin"
+      ]
+    },
+    "market-077-f5-asm": {
+      "vendor": "F5",
+      "product": "BIG-IP ASM / Advanced WAF",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "f5",
+        "asm"
+      ]
+    },
+    "market-078-mikrotik-firewall": {
+      "vendor": "MikroTik",
+      "product": "RouterOS 7",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "mikrotik",
+        "firewall"
+      ]
+    },
+    "market-079-sonicwall-firewall": {
+      "vendor": "SonicWall",
+      "product": "SonicOS 7",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "sonicwall",
+        "firewall"
+      ]
+    },
+    "market-080-suricata-eve-alert": {
+      "vendor": "Open Information Security Foundation",
+      "product": "IDS/IPS",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "json",
+        "suricata",
+        "eve",
+        "alert"
+      ]
+    },
+    "market-081-zeek-conn": {
+      "vendor": "Zeek Project",
+      "product": "network monitor",
+      "models": [],
+      "tags": [
+        "other",
+        "json",
+        "zeek",
+        "conn"
+      ]
+    },
+    "market-082-bind-query": {
+      "vendor": "Internet Systems Consortium",
+      "product": "BIND 9 DNS server",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "bind",
+        "query"
+      ]
+    },
+    "market-083-isc-dhcp": {
+      "vendor": "Internet Systems Consortium",
+      "product": "DHCP server 4.x",
+      "models": [],
+      "tags": [
+        "server",
+        "syslog",
+        "isc",
+        "dhcp"
+      ]
+    },
+    "market-084-postfix-smtp": {
+      "vendor": "Postfix Project",
+      "product": "SMTP server",
+      "models": [],
+      "tags": [
+        "server",
+        "syslog",
+        "postfix",
+        "smtp"
+      ]
+    },
+    "market-085-dovecot-login": {
+      "vendor": "Dovecot",
+      "product": "IMAP server",
+      "models": [],
+      "tags": [
+        "server",
+        "syslog",
+        "dovecot",
+        "login"
+      ]
+    },
+    "market-086-openvpn-session": {
+      "vendor": "OpenVPN",
+      "product": "Community Edition",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "openvpn",
+        "session"
+      ]
+    },
+    "market-087-mongodb-network": {
+      "vendor": "MongoDB",
+      "product": "7.0 mongod/mongos",
+      "models": [],
+      "tags": [
+        "database",
+        "json",
+        "mongodb",
+        "network"
+      ]
+    },
+    "market-088-sqlserver-errorlog": {
+      "vendor": "Microsoft",
+      "product": "SQL Server 2022",
+      "models": [],
+      "tags": [
+        "os",
+        "text",
+        "sqlserver",
+        "errorlog"
+      ]
+    },
+    "market-089-elasticsearch-server": {
+      "vendor": "Elastic",
+      "product": "8.x",
+      "models": [],
+      "tags": [
+        "application",
+        "json",
+        "elasticsearch",
+        "server"
+      ]
+    },
+    "market-090-kafka-server": {
+      "vendor": "Apache Software Foundation",
+      "product": "Kafka broker",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "kafka"
+      ]
+    },
+    "market-091-redis-enterprise-event": {
+      "vendor": "Redis",
+      "product": "Enterprise Software",
+      "models": [],
+      "tags": [
+        "database",
+        "syslog",
+        "redis",
+        "enterprise",
+        "event"
+      ]
+    },
+    "market-092-nats-server": {
+      "vendor": "NATS",
+      "product": "Server 2.x",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "nats"
+      ]
+    },
+    "market-093-rabbitmq-broker": {
+      "vendor": "Broadcom",
+      "product": "RabbitMQ",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "rabbitmq",
+        "broker"
+      ]
+    },
+    "market-094-route53-resolver": {
+      "vendor": "Amazon Web Services",
+      "product": "Route 53 Resolver",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "route53",
+        "resolver"
+      ]
+    },
+    "market-095-lambda-report": {
+      "vendor": "Amazon Web Services",
+      "product": "Lambda",
+      "models": [],
+      "tags": [
+        "cloud",
+        "text",
+        "lambda",
+        "report"
+      ]
+    },
+    "market-096-azure-firewall-network": {
+      "vendor": "Microsoft",
+      "product": "Firewall",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "azure",
+        "firewall",
+        "network"
+      ]
+    },
+    "market-097-azure-appservice-http": {
+      "vendor": "Microsoft",
+      "product": "App Service",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "azure",
+        "appservice",
+        "http"
+      ]
+    },
+    "market-098-gcp-cloud-armor": {
+      "vendor": "Google Cloud",
+      "product": "Armor",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "armor"
+      ]
+    },
+    "market-099-gcp-load-balancer": {
+      "vendor": "Google Cloud",
+      "product": "external Application Load Balancer",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "load",
+        "balancer"
+      ]
+    },
+    "market-100-gcp-cloud-run": {
+      "vendor": "Google Cloud",
+      "product": "Run",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "gcp",
+        "run"
+      ]
+    },
+    "market-101-aws-alb-access": {
+      "vendor": "Amazon Web Services",
+      "product": "Application Load Balancer",
+      "models": [],
+      "tags": [
+        "server",
+        "text",
+        "aws",
+        "alb",
+        "access"
+      ]
+    },
+    "market-102-azure-frontdoor-access": {
+      "vendor": "Microsoft",
+      "product": "Front Door Standard/Premium",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "azure",
+        "frontdoor",
+        "access"
+      ]
+    },
+    "market-103-gitlab-audit": {
+      "vendor": "GitLab",
+      "product": "GitLab",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "gitlab",
+        "audit"
+      ]
+    },
+    "market-104-atlassian-audit": {
+      "vendor": "Atlassian",
+      "product": "Cloud organization audit",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "atlassian",
+        "audit"
+      ]
+    },
+    "market-105-salesforce-login": {
+      "vendor": "Salesforce",
+      "product": "Event Monitoring",
+      "models": [],
+      "tags": [
+        "other",
+        "csv",
+        "salesforce",
+        "login"
+      ]
+    },
+    "market-106-slack-audit": {
+      "vendor": "Slack",
+      "product": "Enterprise Grid",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "slack",
+        "audit"
+      ]
+    },
+    "market-107-vmware-esxi": {
+      "vendor": "VMware",
+      "product": "ESXi 8.x",
+      "models": [],
+      "tags": [
+        "server",
+        "syslog",
+        "vmware",
+        "esxi"
+      ]
+    },
+    "market-108-windows-logon-failed": {
+      "vendor": "Microsoft",
+      "product": "Windows Security Auditing",
+      "models": [],
+      "tags": [
+        "os",
+        "xml",
+        "windows",
+        "logon",
+        "failed"
+      ]
+    },
+    "market-109-windows-special-privileges": {
+      "vendor": "Microsoft",
+      "product": "Windows Security Auditing",
+      "models": [],
+      "tags": [
+        "os",
+        "xml",
+        "windows",
+        "special",
+        "privileges"
+      ]
+    },
+    "market-110-sysmon-filecreate": {
+      "vendor": "Microsoft",
+      "product": "Sysmon",
+      "models": [],
+      "tags": [
+        "endpoint",
+        "security",
+        "xml",
+        "sysmon",
+        "filecreate"
+      ]
+    },
+    "market-111-pfsense-filterlog": {
+      "vendor": "Netgate",
+      "product": "pfSense CE/Plus",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "pfsense",
+        "filterlog"
+      ]
+    },
+    "market-112-junos-bgp": {
+      "vendor": "Juniper Networks",
+      "product": "Junos",
+      "models": [],
+      "tags": [
+        "network",
+        "security",
+        "syslog",
+        "junos",
+        "bgp"
+      ]
+    },
+    "market-113-cloudflare-dns": {
+      "vendor": "Cloudflare",
+      "product": "Logpush",
+      "models": [],
+      "tags": [
+        "cloud",
+        "json",
+        "cloudflare",
+        "dns"
+      ]
+    },
+    "market-114-entra-provisioning": {
+      "vendor": "Microsoft",
+      "product": "Entra ID",
+      "models": [],
+      "tags": [
+        "iam",
+        "json",
+        "entra",
+        "provisioning"
+      ]
+    },
+    "market-115-mosquitto-mqtt": {
+      "vendor": "Eclipse Foundation",
+      "product": "Mosquitto 2.x MQTT broker",
+      "models": [],
+      "tags": [
+        "iot",
+        "text",
+        "mosquitto",
+        "mqtt"
+      ]
+    },
+    "market-116-aws-iot-connect": {
+      "vendor": "Amazon Web Services",
+      "product": "IoT Core",
+      "models": [],
+      "tags": [
+        "iot",
+        "json",
+        "aws",
+        "connect"
+      ]
     },
     "network-device-asa": {
       "vendor": "Cisco",
       "product": "ASA",
-      "tags": ["network", "firewall"]
+      "models": null,
+      "tags": [
+        "network",
+        "firewall"
+      ]
     },
     "network-device-firewall": {
       "vendor": "Palo Alto Networks",
       "product": "PAN-OS",
-      "tags": ["network", "firewall"]
+      "models": null,
+      "tags": [
+        "network",
+        "firewall"
+      ]
     },
     "network-perimeter-leef": {
+      "vendor": "",
       "product": "NextGenFW perimeter firewall",
-      "tags": ["network", "firewall"]
+      "models": null,
+      "tags": [
+        "network",
+        "firewall"
+      ]
     },
     "network-perimeter-xml": {
+      "vendor": "",
       "product": "Perimeter security appliance intrusion alerts",
-      "tags": ["network", "security"]
+      "models": null,
+      "tags": [
+        "network",
+        "security"
+      ]
     },
     "os-linux-auth": {
+      "vendor": "",
       "product": "Linux system and SSH authentication",
-      "tags": ["linux", "ssh", "authentication"]
+      "models": null,
+      "tags": [
+        "linux",
+        "ssh",
+        "authentication"
+      ]
     },
     "server-webaccess": {
+      "vendor": "",
       "product": "Nginx and Apache web access logs",
-      "tags": ["web", "access"]
+      "models": null,
+      "tags": [
+        "web",
+        "access"
+      ]
     }
   },
   "releases": {
     "app-payment-gateway@1.0.1": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["json"]
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
     },
     "appliance-proprietary-text@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["text"]
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
     },
     "cloud-audit@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["json"]
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
     },
     "container-runtime@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["json"]
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
     },
     "database-audit@1.0.1": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["csv"]
+      "min_worm": "",
+      "required_decoders": [
+        "csv"
+      ],
+      "published_at": ""
     },
     "endpoint-ids-alert@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["cef"]
+      "min_worm": "",
+      "required_decoders": [
+        "cef"
+      ],
+      "published_at": ""
     },
     "iam-auth-leef@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["leef"]
+      "min_worm": "",
+      "required_decoders": [
+        "leef"
+      ],
+      "published_at": ""
     },
     "iot-gateway-xml@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["xml"]
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-001-panos-traffic@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-002-panos-threat@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-003-panos-url@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-004-panos-system@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-005-fortigate-forward@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-006-fortigate-system@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-007-fortigate-vpn@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-008-fortigate-webfilter@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-009-fortigate-ips@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-013-cisco-ftd-connection@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-015-checkpoint-json@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-016-checkpoint-leef@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "leef"
+      ],
+      "published_at": ""
+    },
+    "market-017-junos-flow-create@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-018-junos-commit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-019-sophos-firewall@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-020-meraki-mx-flows@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-021-meraki-mr-association@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-022-iosxe-system@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-023-aws-cloudtrail-management@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-024-aws-cloudtrail-s3@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-025-aws-vpc-flow@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-025-aws-vpc-flow@1.0.1": {
+      "changelog": "Tighten parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": "2026-10-17T17:33:34Z"
+    },
+    "market-026-aws-network-firewall-alert@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-027-aws-waf@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-028-azure-activity@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-029-entra-signin@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-030-gcp-admin-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-031-gcp-vpc-flow@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-032-cloudflare-http@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-033-okta-system-log@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-034-duo-authentication@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-035-defender-process@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-036-windows-service-state@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-038-postgres-csv@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "csv"
+      ],
+      "published_at": ""
+    },
+    "market-040-kubernetes-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-041-cloudfront-standard@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "csv"
+      ],
+      "published_at": ""
+    },
+    "market-042-azure-nsg-flow@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-043-entra-directory-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-044-mysql-error@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-045-mysql-enterprise-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-046-mysql-general-query@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-047-oracle-unified-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-048-apache-error@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-049-iis-w3c@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-050-haproxy-http@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-051-envoy-access@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-052-docker-events@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-053-sysmon-process@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-054-sysmon-network@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-055-windows-logon-success@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-056-windows-process@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-057-linux-audit-auth@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-057-linux-audit-auth@1.0.1": {
+      "changelog": "Tighten parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": "2026-10-17T17:33:34Z"
+    },
+    "market-058-sudo-command@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-059-meraki-ms-port@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-060-arista-eos@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-061-fortiweb-waf@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-062-sophos-ips@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-063-junos-flow-close@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-064-panos-globalprotect@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-065-panos-config@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-066-fortigate-antivirus@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-067-fortigate-local@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-068-cisco-ftd-intrusion@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-069-aws-cloudtrail-network@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-070-aws-network-firewall-flow@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-071-gcp-data-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-072-gcp-dns@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-073-cloudflare-firewall@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-074-defender-network@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-074-defender-network@1.0.1": {
+      "changelog": "Correct parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": "2026-10-17T17:31:35Z"
+    },
+    "market-075-cisco-ise-radius@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-076-fortimail-admin@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-077-f5-asm@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-078-mikrotik-firewall@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-079-sonicwall-firewall@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-080-suricata-eve-alert@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-080-suricata-eve-alert@1.0.1": {
+      "changelog": "Correct parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": "2026-10-17T17:31:35Z"
+    },
+    "market-081-zeek-conn@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-082-bind-query@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-083-isc-dhcp@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-084-postfix-smtp@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-085-dovecot-login@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-085-dovecot-login@1.0.1": {
+      "changelog": "Correct parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": "2026-10-17T17:31:35Z"
+    },
+    "market-086-openvpn-session@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-087-mongodb-network@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-088-sqlserver-errorlog@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-089-elasticsearch-server@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-090-kafka-server@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-091-redis-enterprise-event@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-092-nats-server@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-093-rabbitmq-broker@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-094-route53-resolver@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-095-lambda-report@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-096-azure-firewall-network@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-097-azure-appservice-http@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-098-gcp-cloud-armor@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-099-gcp-load-balancer@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-100-gcp-cloud-run@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-101-aws-alb-access@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-101-aws-alb-access@1.0.1": {
+      "changelog": "Correct parser matching and normalization",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": "2026-10-17T17:31:35Z"
+    },
+    "market-102-azure-frontdoor-access@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-103-gitlab-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-104-atlassian-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-105-salesforce-login@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "csv"
+      ],
+      "published_at": ""
+    },
+    "market-106-slack-audit@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-107-vmware-esxi@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-108-windows-logon-failed@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-109-windows-special-privileges@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-110-sysmon-filecreate@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
+    },
+    "market-111-pfsense-filterlog@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-112-junos-bgp@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "market-113-cloudflare-dns@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-114-entra-provisioning@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
+    },
+    "market-115-mosquitto-mqtt@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
+    },
+    "market-116-aws-iot-connect@1.0.0": {
+      "changelog": "Initial marketplace release of this parser profile.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "json"
+      ],
+      "published_at": ""
     },
     "network-device-asa@1.0.3": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["syslog"]
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
+    },
+    "network-device-asa@1.0.4": {
+      "changelog": "Preserve the ASA event message and align the local pack with the latest fixture coverage.",
+      "withdrawn": false,
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
     },
     "network-device-firewall@1.0.5": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["syslog"]
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
     },
     "network-perimeter-leef@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["leef"]
+      "min_worm": "",
+      "required_decoders": [
+        "leef"
+      ],
+      "published_at": ""
     },
     "network-perimeter-xml@1.0.0": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["xml"]
+      "min_worm": "",
+      "required_decoders": [
+        "xml"
+      ],
+      "published_at": ""
     },
     "os-linux-auth@1.0.2": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["syslog"]
+      "min_worm": "",
+      "required_decoders": [
+        "syslog"
+      ],
+      "published_at": ""
     },
     "server-webaccess@1.0.1": {
       "changelog": "Initial marketplace listing of the existing WORM parser pack.",
       "withdrawn": false,
-      "required_decoders": ["text"]
+      "min_worm": "",
+      "required_decoders": [
+        "text"
+      ],
+      "published_at": ""
     }
   }
 }

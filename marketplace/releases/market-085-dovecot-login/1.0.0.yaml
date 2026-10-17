@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-085-dovecot-login
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 85: Dovecot IMAP server; authentication event log text/syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: syslog
+  match:
+    contains: "mpid=1234"
+    regex: '^imap-login: Login:'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

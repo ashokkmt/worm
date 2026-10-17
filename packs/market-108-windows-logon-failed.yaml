@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-108-windows-logon-failed
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 108: Microsoft Windows Security Auditing; Event 4625 failed logon XML event"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: xml
+  match:
+    contains: "Name=\"Failu"
+  fields:
+    sample_validation_108:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

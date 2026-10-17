@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-024-aws-cloudtrail-s3
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 24: AWS CloudTrail; S3 object data event JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"bucketName\":"
+  fields:
+    event_message:
+      from: "eventName"
+      type: string
+    event_time:
+      from: "eventTime"
+      type: timestamp
+    event_action:
+      from: "eventType"
+      type: string
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+    event_action: event.action
+  preserveUnmapped: true

@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-054-sysmon-network
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 54: Microsoft Sysmon; Event ID 3 Network connection rendered as Windows Event XML"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: xml
+  match:
+    contains: "Name=\"Desti"
+  fields:
+    sample_validation_54:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

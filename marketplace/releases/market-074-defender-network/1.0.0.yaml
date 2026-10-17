@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-074-defender-network
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 74: Microsoft Defender for Endpoint; DeviceNetworkEvents JSON row"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: json
+  match:
+    contains: "\"LocalIP\":"
+  fields:
+    event_time:
+      from: "Timestamp"
+      type: timestamp
+    src:
+      from: "RemoteIP"
+      type: ip
+    dst:
+      from: "RemoteIP"
+      type: ip
+  map:
+    event_time: event.time
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+  preserveUnmapped: true

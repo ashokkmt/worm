@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-093-rabbitmq-broker
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 93: RabbitMQ; broker connection diagnostics with text formatter; JSON formatter requires separate fixtures"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: text
+  match:
+    contains: "accepting"
+    regex: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+[+-]\d{2}:\d{2} \[info\]'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

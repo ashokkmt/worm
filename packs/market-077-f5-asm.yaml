@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-077-f5-asm
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 77: F5 BIG-IP ASM / Advanced WAF; application security rejection syslog text"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "rejected"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-018-junos-commit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 18: Juniper Junos device; system event syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "UI_COMMIT"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

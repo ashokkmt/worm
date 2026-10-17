@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-017-junos-flow-create
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 17: Juniper SRX300/SRX400/SRX1500 family; security flow session-create syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "ESSION_CREAT"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

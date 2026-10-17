@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-052-docker-events
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 52: Docker Engine; daemon event stream JSON objects"
+  author: WORM Owner
+spec:
+  sourceCategory: container
+  format: json
+  match:
+    contains: "\"Actor\":"
+  fields:
+    event_message:
+      from: "Action"
+      type: string
+    event_action:
+      from: "Action"
+      type: string
+    sample_validation_52:
+      from: "time"
+      type: timestamp
+      required: true
+  map:
+    event_message: event.activity_name
+    event_action: event.action
+  preserveUnmapped: true

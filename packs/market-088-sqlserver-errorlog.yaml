@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-088-sqlserver-errorlog
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 88: Microsoft SQL Server 2022; ERRORLOG plain-text diagnostic record"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: text
+  match:
+    contains: "00 Logon"
+    regex: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{2} Logon\s+'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

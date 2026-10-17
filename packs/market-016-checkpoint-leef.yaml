@@ -1,0 +1,39 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-016-checkpoint-leef
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 16: Check Point Quantum R81; Log Exporter LEEF"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: leef
+  match:
+    contains: ".0.2.10^dst="
+  fields:
+    event_message:
+      from: "action"
+      type: string
+    src:
+      from: "src"
+      type: ip
+    dst:
+      from: "dst"
+      type: ip
+    src_port:
+      from: "srcPort"
+      type: integer
+    dst_port:
+      from: "dstPort"
+      type: integer
+    event_action:
+      from: "action"
+      type: string
+  map:
+    event_message: event.activity_name
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+    dst_port: event.dst_endpoint.port
+    event_action: event.action
+  preserveUnmapped: true

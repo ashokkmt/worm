@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-057-linux-audit-auth
+  version: 1.0.1
+  description: "Local parser profile for source inventory entry 57: Linux auditd; USER_AUTH / USER_LOGIN audit records in audit text format (multi-record event grouping may need upstream handling)"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: text
+  match:
+    regex: '^type=USER_(AUTH|LOGIN) msg=audit\(\d+\.\d+:\d+\):'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

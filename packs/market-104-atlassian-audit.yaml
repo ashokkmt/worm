@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-104-atlassian-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 104: Atlassian Cloud organization audit; JSON API events with nested attributes"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"container\":"
+  fields:
+    sample_validation_104:
+      from: "attributes.time"
+      type: timestamp
+      required: true
+  preserveUnmapped: true

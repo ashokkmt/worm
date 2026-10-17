@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-036-windows-service-state
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 36: Windows Service Control Manager; Event 7036 service state change XML (replaces generic event envelope)"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: xml
+  match:
+    contains: "Name=\"Servi"
+  fields:
+    sample_validation_36:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

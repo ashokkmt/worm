@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-091-redis-enterprise-event
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 91: Redis Enterprise Software; event_log key-value record over syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: syslog
+  match:
+    contains: "\"object\":"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

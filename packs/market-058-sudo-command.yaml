@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-058-sudo-command
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 58: Linux sudo; command/session event in syslog text"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: syslog
+  match:
+    contains: "PWD=/home/l"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

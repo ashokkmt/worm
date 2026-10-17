@@ -44,10 +44,24 @@ func main() {
 	out := flag.String("out", "internal/marketplace/catalog.json", "signed catalog output file")
 	site := flag.String("site", "marketplace-site", "static site output directory")
 	keyFile := flag.String("key-file", "", "base64 Ed25519 private key file (or WORM_MARKETPLACE_SIGNING_KEY)")
-	checkPacks := flag.Bool("check-packs", false, "verify shipped pack files match the embedded signed catalog")
+	checkPacks := flag.Bool("check-packs", false, "verify owner pack files match the embedded signed catalog")
+	prepareRelease := flag.Bool("prepare-release", false, "archive and version selected packs before editing them")
+	changelog := flag.String("changelog", "", "changelog for packs prepared with -prepare-release")
+	registryURL := flag.String("registry-url", "https://ashokkmt.github.io/worm", "registry used to retrieve missing prior release artifacts")
 	flag.Parse()
 	if *checkPacks {
 		checkSeedPacks(*packDir)
+		return
+	}
+	if *prepareRelease {
+		if strings.TrimSpace(*changelog) == "" {
+			fatal(fmt.Errorf("provide -changelog when using -prepare-release"))
+		}
+		previous, err := os.ReadFile(*out)
+		fatal(err)
+		catalog, err := marketplace.Verify(previous)
+		fatal(err)
+		fatal(prepareReleaseFiles(*packDir, *metadataFile, *registryURL, catalog, flag.Args(), *changelog))
 		return
 	}
 	keyText := os.Getenv("WORM_MARKETPLACE_SIGNING_KEY")
@@ -70,6 +84,9 @@ func main() {
 		fatal(err)
 	} else if !os.IsNotExist(prevErr) {
 		fatal(prevErr)
+	}
+	if len(flag.Args()) > 0 {
+		fatal(fmt.Errorf("pack YAML arguments require -prepare-release"))
 	}
 
 	entries, err := os.ReadDir(*packDir)
@@ -249,7 +266,7 @@ func checkSeedPacks(dir string) {
 			}
 			latest, latestOK := cp.Latest()
 			if !latestOK || strings.TrimPrefix(latest.Version, "v") != strings.TrimPrefix(p.Metadata.Version, "v") {
-				fatal(fmt.Errorf("shipped pack %s@%s is not the embedded catalog's latest stable release", p.Metadata.Name, p.Metadata.Version))
+				fatal(fmt.Errorf("owner pack %s@%s is not the embedded catalog's latest stable release", p.Metadata.Name, p.Metadata.Version))
 			}
 			for _, r := range cp.Releases {
 				if strings.TrimPrefix(r.Version, "v") == strings.TrimPrefix(p.Metadata.Version, "v") && r.VerifyArtifact(data) == nil {
@@ -258,7 +275,7 @@ func checkSeedPacks(dir string) {
 			}
 		}
 		if !matched {
-			fatal(fmt.Errorf("shipped pack %s@%s does not match embedded signed catalog", p.Metadata.Name, p.Metadata.Version))
+			fatal(fmt.Errorf("owner pack %s@%s does not match embedded signed catalog", p.Metadata.Name, p.Metadata.Version))
 		}
 	}
 }

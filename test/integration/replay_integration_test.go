@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 )
 
 func TestEndToEnd_ReplayAndPacks(t *testing.T) {
-	t.Setenv("WORM_ADMIN_TOKEN","integration-token")
+	t.Setenv("WORM_ADMIN_TOKEN", "integration-token")
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "worm.db")
 	outputPath := filepath.Join(tempDir, "normalized.ndjson")
@@ -119,6 +120,9 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 	_ = os.MkdirAll(tempPacksDir, 0755)
 	basePacks, _ := os.ReadDir(filepath.Join(root, "packs"))
 	for _, bp := range basePacks {
+		if bp.IsDir() || !strings.HasSuffix(strings.ToLower(bp.Name()), ".yaml") {
+			continue
+		}
 		bdata, _ := os.ReadFile(filepath.Join(root, "packs", bp.Name()))
 		_ = os.WriteFile(filepath.Join(tempPacksDir, bp.Name()), bdata, 0644)
 	}
@@ -146,7 +150,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 		"filename":     "app-order-service.yaml",
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/packs/activate", bytes.NewReader(actOrderBody))
-	req.Header.Set("Authorization","Bearer integration-token")
+	req.Header.Set("Authorization", "Bearer integration-token")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -164,7 +168,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 		"filename":     "edge-waf.yaml",
 	})
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/packs/activate", bytes.NewReader(actWafBody))
-	req.Header.Set("Authorization","Bearer integration-token")
+	req.Header.Set("Authorization", "Bearer integration-token")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -174,7 +178,7 @@ func TestEndToEnd_ReplayAndPacks(t *testing.T) {
 
 	// 3. Trigger Global Replay All
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/quarantine/replay-all", nil)
-	req.Header.Set("Authorization","Bearer integration-token")
+	req.Header.Set("Authorization", "Bearer integration-token")
 	rec = httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

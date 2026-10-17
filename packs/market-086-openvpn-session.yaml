@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-086-openvpn-session
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 86: OpenVPN Community Edition; connection/authentication log text"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: text
+  match:
+    contains: "10.8.0.2"
+    regex: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \S+/\d{1,3}(\.\d{1,3}){3}:\d+ MULTI:'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

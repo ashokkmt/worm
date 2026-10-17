@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-056-windows-process
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 56: Windows Security Auditing; Event 4688 process creation as event XML"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: xml
+  match:
+    contains: "Name=\"NewPr"
+  fields:
+    sample_validation_56:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

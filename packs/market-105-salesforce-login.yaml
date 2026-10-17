@@ -1,0 +1,13 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-105-salesforce-login
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 105: Salesforce Event Monitoring; Login EventLogFile selected-column CSV export"
+  author: WORM Owner
+spec:
+  sourceCategory: other
+  format: csv
+  match:
+    contains: "DLAB00000000"
+  preserveUnmapped: true

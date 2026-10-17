@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-113-cloudflare-dns
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 113: Cloudflare Logpush; DNS logs dataset JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"ColoCode\":"
+  fields:
+    src:
+      from: "SourceIP"
+      type: ip
+    sample_validation_113:
+      from: "Timestamp"
+      type: timestamp
+      required: true
+  map:
+    src: event.src_endpoint.ip
+  preserveUnmapped: true

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-050-haproxy-http
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 50: HAProxy 2.x; HTTP request log (configurable HTTP log format, commonly syslog text)"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: syslog
+  match:
+    contains: "fe_https"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

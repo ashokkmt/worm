@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-055-windows-logon-success
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 55: Windows Security Auditing; Event 4624 successful logon as event XML"
+  author: WORM Owner
+spec:
+  sourceCategory: os
+  format: xml
+  match:
+    contains: "=\"TargetLogo"
+  fields:
+    sample_validation_55:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

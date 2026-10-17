@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-047-oracle-unified-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 47: Oracle Database; unified audit trail records exported from UNIFIED_AUDIT_TRAIL as JSON (exported representation, not native audit-"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: json
+  match:
+    contains: "\"USERHOST\":"
+  fields:
+    event_time:
+      from: "EVENT_TIMESTAMP"
+      type: timestamp
+      required: true
+  map:
+    event_time: event.time
+  preserveUnmapped: true

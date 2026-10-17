@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-031-gcp-vpc-flow
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 31: Google Cloud VPC Flow Logs; structured JSON record"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"end_time\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

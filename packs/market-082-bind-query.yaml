@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-082-bind-query
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 82: ISC BIND 9 DNS server; query logging text records"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: text
+  match:
+    contains: "queries:"
+    regex: '^\d{2}-[A-Z][a-z]{2}-\d{4} \d{2}:\d{2}:\d{2}\.\d{3} queries:'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

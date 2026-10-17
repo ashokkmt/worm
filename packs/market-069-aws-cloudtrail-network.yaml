@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-069-aws-cloudtrail-network
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 69: AWS CloudTrail; network activity event JSON (VPC endpoint activity)"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"errorCode\":"
+  fields:
+    event_message:
+      from: "eventName"
+      type: string
+    event_time:
+      from: "eventTime"
+      type: timestamp
+    event_action:
+      from: "eventType"
+      type: string
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+    event_action: event.action
+  preserveUnmapped: true

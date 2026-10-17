@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-045-mysql-enterprise-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 45: MySQL Enterprise Audit; JSON audit event records"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: json
+  match:
+    contains: "\"class\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-038-postgres-csv
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 38: PostgreSQL 17; CSV logging format"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: csv
+  match:
+    contains: "statement:"
+  fields:
+    sample_validation_38:
+      from: "column_0"
+      type: timestamp
+      required: true
+      layout: "2006-01-02 15:04:05.000 MST"
+  preserveUnmapped: true

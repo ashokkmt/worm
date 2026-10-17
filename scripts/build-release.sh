@@ -39,7 +39,8 @@ for target in "${targets[@]}"; do
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go build -trimpath -ldflags="-s -w -X 'main.Version=${tag}'" \
     -o "$stage/$binary" ./cmd/worm
-  cp -R packs schemas sources sinks "$stage/"
+  mkdir -p "$stage/packs"
+  cp -R schemas sources sinks "$stage/"
 
   archive="worm-${tag}-${goos}-${goarch}.tar.gz"
   tar -czf "$output/$archive" -C "$stage" .

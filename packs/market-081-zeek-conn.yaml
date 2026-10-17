@@ -1,0 +1,35 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-081-zeek-conn
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 81: Zeek network monitor; conn.log JSON writer output"
+  author: WORM Owner
+spec:
+  sourceCategory: other
+  format: json
+  match:
+    contains: "\"history\":"
+  fields:
+    src:
+      from: "id.orig_h"
+      type: ip
+    dst:
+      from: "id.resp_h"
+      type: ip
+    src_port:
+      from: "id.orig_p"
+      type: integer
+    dst_port:
+      from: "id.resp_p"
+      type: integer
+    sample_validation_81:
+      from: "ts"
+      type: timestamp
+      required: true
+  map:
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+    dst_port: event.dst_endpoint.port
+  preserveUnmapped: true

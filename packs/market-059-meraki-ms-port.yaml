@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-059-meraki-ms-port
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 59: Cisco Meraki MS220-8P / MS firmware family; switch port-state event syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "MS220_8P-LA"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

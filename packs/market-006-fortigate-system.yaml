@@ -1,0 +1,28 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-006-fortigate-system
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 6: Fortinet FortiGate FortiOS 7.4; system/admin event key=value log"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: text
+  match:
+    contains: "action=\"log"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_6:
+      from: "date"
+      type: timestamp
+      required: true
+      layout: "2006-01-02"
+  map:
+    event_message: event.message
+    event_action: event.action
+  preserveUnmapped: true

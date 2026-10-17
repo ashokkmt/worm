@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-097-azure-appservice-http
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 97: Azure App Service; AppServiceHTTPLogs table rows exported as JSON; application stdout excluded"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"CsHost\":"
+  fields:
+    event_time:
+      from: "TimeGenerated"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

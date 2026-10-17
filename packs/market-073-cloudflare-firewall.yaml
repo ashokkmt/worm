@@ -1,0 +1,32 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-073-cloudflare-firewall
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 73: Cloudflare Logpush; firewall events dataset JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"RuleID\":"
+  fields:
+    event_message:
+      from: "Action"
+      type: string
+    event_time:
+      from: "Datetime"
+      type: timestamp
+      required: true
+    src:
+      from: "ClientIP"
+      type: ip
+    event_action:
+      from: "Action"
+      type: string
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+    src: event.src_endpoint.ip
+    event_action: event.action
+  preserveUnmapped: true

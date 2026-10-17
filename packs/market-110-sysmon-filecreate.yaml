@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-110-sysmon-filecreate
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 110: Microsoft Sysmon; Event ID 11 FileCreate XML event"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: xml
+  match:
+    contains: "Name=\"Creat"
+  fields:
+    sample_validation_110:
+      from: "System.EventID"
+      type: integer
+      required: true
+  preserveUnmapped: true

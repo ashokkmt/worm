@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-068-cisco-ftd-intrusion
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 68: Cisco Secure Firewall Threat Defense 7.x; intrusion event syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "FTD-4-430001"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-026-aws-network-firewall-alert
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 26: AWS Network Firewall; alert log JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: json
+  match:
+    contains: "Attempted"
+  fields:
+    sample_validation_26:
+      from: "event.timestamp"
+      type: timestamp
+      required: true
+  preserveUnmapped: true

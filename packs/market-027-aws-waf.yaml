@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-027-aws-waf
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 27: AWS WAF; web ACL log JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"country\":"
+  fields:
+    event_message:
+      from: "action"
+      type: string
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_27:
+      from: "timestamp"
+      type: timestamp
+      required: true
+  map:
+    event_message: event.activity_name
+    event_action: event.action
+  preserveUnmapped: true

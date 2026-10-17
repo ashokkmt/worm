@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"worm/internal/model"
 )
@@ -72,8 +73,16 @@ func (c *CSVDecoder) Detect(raw []byte) float64 {
 			return 0.85
 		}
 	} else if len(lines) == 1 && c1 >= 1 {
-		// Header-only CSV
-		return 0.55
+		reader := csv.NewReader(bytes.NewReader(trimmed))
+		reader.Comma = delim
+		if row, err := reader.Read(); err == nil && csvHeaderRow(row) {
+			return 0.55
+		}
+		// A single headerless data row is common in exported flow/audit files.
+		// Avoid claiming ordinary prose with a comma as CSV.
+		if c1 >= 10 || csvTimestampPrefix.Match(trimmed) {
+			return 0.55
+		}
 	}
 
 	return 0.0
@@ -98,7 +107,8 @@ func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	reader.TrimLeadingSpace = true
 	reader.ReuseRecord = false
 
-	// First row represents column headers
+	// Treat an obviously data-shaped first row (for example a timestamp followed
+	// by values) as a headerless record. Headerless columns receive stable names.
 	rawHeaders, err := reader.Read()
 	if err != nil {
 		if errors.Is(err, io.EOF) {
@@ -111,21 +121,31 @@ func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		return nil, fmt.Errorf("CSV column count %d exceeds maximum limit of %d", len(rawHeaders), MaxFields)
 	}
 
+	hasHeader := csvHeaderRow(rawHeaders)
 	headers := make([]string, len(rawHeaders))
 	for i, h := range rawHeaders {
-		headers[i] = strings.TrimSpace(h)
+		if hasHeader {
+			headers[i] = strings.TrimSpace(h)
+		} else {
+			headers[i] = fmt.Sprintf("column_%d", i)
+		}
 	}
 
 	var records []*model.DecodedRecord
 	rowIdx := 0
 
 	for {
-		row, err := reader.Read()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
+		var row []string
+		if rowIdx == 0 && !hasHeader {
+			row = rawHeaders
+		} else {
+			row, err = reader.Read()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				return nil, fmt.Errorf("malformed CSV row %d: %w", rowIdx+1, err)
 			}
-			return nil, fmt.Errorf("malformed CSV row %d: %w", rowIdx+1, err)
 		}
 
 		if len(records) >= MaxChildren {
@@ -158,4 +178,19 @@ func (c *CSVDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	}
 
 	return records, nil
+}
+
+var csvHeaderToken = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_. -]*$`)
+var csvTimestampPrefix = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[ T]`)
+
+func csvHeaderRow(row []string) bool {
+	if len(row) == 0 {
+		return false
+	}
+	for _, cell := range row {
+		if !csvHeaderToken.MatchString(strings.TrimSpace(cell)) {
+			return false
+		}
+	}
+	return true
 }

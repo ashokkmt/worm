@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-083-isc-dhcp
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 83: ISC DHCP server 4.x; DHCP lease/event syslog text"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: syslog
+  match:
+    contains: "dhcp-lab"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"worm/internal/model"
 	"worm/internal/ocsf"
@@ -306,6 +307,12 @@ func LookupNested(m map[string]any, path string) (any, bool) {
 				return nil, false
 			}
 			current = val
+		case []any:
+			index, err := strconv.Atoi(part)
+			if err != nil || index < 0 || index >= len(node) {
+				return nil, false
+			}
+			current = node[index]
 		default:
 			return nil, false
 		}

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-021-meraki-mr-association
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 21: Cisco Meraki MR33 / MR firmware family; wireless association events syslog; confirm firmware attributes"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "channel=36"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

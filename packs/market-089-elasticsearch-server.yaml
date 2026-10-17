@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-089-elasticsearch-server
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 89: Elasticsearch 8.x; server logs in ECS-compatible JSON layout"
+  author: WORM Owner
+spec:
+  sourceCategory: application
+  format: json
+  match:
+    contains: "\"log.level\":"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+    event_time:
+      from: "@timestamp"
+      type: timestamp
+  map:
+    event_message: event.message
+    event_time: event.time
+  preserveUnmapped: true

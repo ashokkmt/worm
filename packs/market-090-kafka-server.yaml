@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-090-kafka-server
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 90: Apache Kafka broker; server application log text (Log4j configuration)"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: text
+  match:
+    contains: "=1] started"
+    regex: '^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+\] INFO \[KafkaServer'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

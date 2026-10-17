@@ -1,0 +1,36 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-080-suricata-eve-alert
+  version: 1.0.1
+  description: "Local parser profile for source inventory entry 80: Suricata IDS/IPS; EVE JSON alert event"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: json
+  match:
+    fieldEquals:
+      event_type: alert
+  fields:
+    event_message:
+      from: "event_type"
+      type: string
+    event_time:
+      from: "timestamp"
+      type: timestamp
+    src:
+      from: "src_ip"
+      type: ip
+    dst:
+      from: "dest_ip"
+      type: ip
+    src_port:
+      from: "src_port"
+      type: integer
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+  preserveUnmapped: true

@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-094-route53-resolver
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 94: Amazon Route 53 Resolver; DNS query log JSON record"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"Class\":"
+  fields:
+    src_port:
+      from: "srcport"
+      type: integer
+    sample_validation_94:
+      from: "version"
+      type: string
+      required: true
+  map:
+    src_port: event.src_endpoint.port
+  preserveUnmapped: true

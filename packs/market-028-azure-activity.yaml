@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-028-azure-activity
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 28: Microsoft Azure; Activity Log event JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"claims\":"
+  fields:
+    event_message:
+      from: "operationName"
+      type: string
+    event_time:
+      from: "time"
+      type: timestamp
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+  preserveUnmapped: true

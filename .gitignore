@@ -9,3 +9,4 @@ dist/
 marketplace-site/
 vendor/
 packs/.marketplace/
+.secrets/

@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-115-mosquitto-mqtt
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 115: Eclipse Mosquitto 2.x MQTT broker; IoT client connection log text"
+  author: WORM Owner
+spec:
+  sourceCategory: iot
+  format: text
+  match:
+    contains: "connected"
+    regex: '^\d+: New client connected from '
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-084-postfix-smtp
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 84: Postfix SMTP server; mail delivery and rejection log text"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: syslog
+  match:
+    contains: "delay=0.1"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

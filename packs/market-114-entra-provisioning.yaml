@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-114-entra-provisioning
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 114: Microsoft Entra ID; AADProvisioningLogs rows exported as JSON (distinct from directory AuditLogs)"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"JobId\":"
+  fields:
+    event_time:
+      from: "TimeGenerated"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

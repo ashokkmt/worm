@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-070-aws-network-firewall-flow
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 70: AWS Network Firewall; flow log JSON record"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"bytes\":"
+  fields:
+    sample_validation_70:
+      from: "event.timestamp"
+      type: timestamp
+      required: true
+  preserveUnmapped: true

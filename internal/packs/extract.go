@@ -17,6 +17,7 @@ var commonTimeLayouts = []string{
 	"2006-01-02T15:04:05Z",
 	"2006-01-02 15:04:05",
 	"02/Jan/2006:15:04:05 -0700", // Combined Log Format (CLF)
+	"Jan 2 15:04:05",             // RFC 3164 single-digit day without padding
 	"Jan 02 15:04:05",            // RFC 3164 BSD Syslog
 	"Jan  2 15:04:05",
 }
@@ -153,10 +154,10 @@ func castType(val any, targetType, layout string) (any, error) {
 func parseTimestamp(strVal, layout string) (int64, error) {
 	// First check if string is already numeric unix timestamp
 	if n, err := strconv.ParseInt(strVal, 10, 64); err == nil {
-		if n > 1e11 { // already milliseconds
-			return n, nil
-		}
-		return n * 1000, nil // seconds to milliseconds
+		return epochMillis(float64(n)), nil
+	}
+	if n, err := strconv.ParseFloat(strVal, 64); err == nil {
+		return epochMillis(n), nil
 	}
 
 	// If explicit layout provided, try it first
@@ -181,4 +182,17 @@ func parseTimestamp(strVal, layout string) (int64, error) {
 	}
 
 	return 0, fmt.Errorf("unable to parse timestamp %q", strVal)
+}
+
+func epochMillis(value float64) int64 {
+	switch {
+	case value >= 1e17 || value <= -1e17: // nanoseconds
+		return int64(value / 1e6)
+	case value >= 1e14 || value <= -1e14: // microseconds
+		return int64(value / 1e3)
+	case value >= 1e11 || value <= -1e11: // milliseconds
+		return int64(value)
+	default: // seconds
+		return int64(value * 1e3)
+	}
 }

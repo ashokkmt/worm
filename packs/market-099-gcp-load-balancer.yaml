@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-099-gcp-load-balancer
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 99: Google Cloud external Application Load Balancer; request log JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\",\"statusDet"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

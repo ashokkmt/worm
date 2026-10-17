@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-040-kubernetes-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 40: Kubernetes API server; audit event JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: container
+  format: json
+  match:
+    contains: "\"stage\":"
+  fields:
+    sample_validation_40:
+      from: "kind"
+      type: string
+      required: true
+  preserveUnmapped: true

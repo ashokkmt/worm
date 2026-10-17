@@ -1,0 +1,43 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-019-sophos-firewall
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 19: Sophos Firewall XGS / SFOS; firewall traffic key=value log"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: text
+  match:
+    contains: "=\"Firewall\""
+  fields:
+    event_message:
+      from: "message"
+      type: string
+    event_time:
+      from: "timestamp"
+      type: timestamp
+    src:
+      from: "src_ip"
+      type: ip
+    dst:
+      from: "dst_ip"
+      type: ip
+    src_port:
+      from: "src_port"
+      type: integer
+    dst_port:
+      from: "dst_port"
+      type: integer
+    event_action:
+      from: "status"
+      type: string
+  map:
+    event_message: event.message
+    event_time: event.time
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+    dst_port: event.dst_endpoint.port
+    event_action: event.action
+  preserveUnmapped: true

@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-107-vmware-esxi
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 107: VMware ESXi 8.x; vmsyslogd host audit/system events in RFC 3164/5424 syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: syslog
+  match:
+    contains: "sub=Vimsvc"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-029-entra-signin
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 29: Microsoft Entra ID; SigninLogs JSON record"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"IPAddress\":"
+  fields:
+    event_time:
+      from: "TimeGenerated"
+      type: timestamp
+    src:
+      from: "IPAddress"
+      type: ip
+  map:
+    event_time: event.time
+    src: event.src_endpoint.ip
+  preserveUnmapped: true

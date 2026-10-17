@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-034-duo-authentication
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 34: Duo Admin Panel; authentication event JSON export"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"factor\":"
+  fields:
+    event_time:
+      from: "isotimestamp"
+      type: timestamp
+    sample_validation_34:
+      from: "timestamp"
+      type: timestamp
+      required: true
+  map:
+    event_time: event.time
+  preserveUnmapped: true

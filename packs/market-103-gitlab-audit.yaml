@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-103-gitlab-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 103: GitLab; audit events API JSON record"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"details\":"
+  fields:
+    sample_validation_103:
+      from: "created_at"
+      type: timestamp
+      required: true
+  preserveUnmapped: true

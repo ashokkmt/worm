@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-041-cloudfront-standard
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 41: Amazon CloudFront distribution standard access logs; W3C extended, tab-separated fields (file input; confirm tab handling/conversi"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: csv
+  match:
+    contains: "HTTP/2.0"
+  fields:
+    sample_validation_41:
+      from: "column_0"
+      type: timestamp
+      required: true
+      layout: "2006-01-02"
+  preserveUnmapped: true

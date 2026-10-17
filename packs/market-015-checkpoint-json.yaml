@@ -1,0 +1,35 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-015-checkpoint-json
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 15: Check Point Quantum R81; Log Exporter generic JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: json
+  match:
+    contains: "\"origin\":"
+  fields:
+    event_message:
+      from: "action"
+      type: string
+    src:
+      from: "src"
+      type: ip
+    dst:
+      from: "dst"
+      type: ip
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_15:
+      from: "time"
+      type: timestamp
+      required: true
+  map:
+    event_message: event.activity_name
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    event_action: event.action
+  preserveUnmapped: true

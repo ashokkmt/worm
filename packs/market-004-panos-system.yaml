@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-004-panos-system
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 4: Palo Alto Networks PAN-OS NGFW; System log CSV over syslog; explicit custom syslog CSV profile; see fixture notes"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "completed"
+    regex: '^\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2},[^\"]*("[^\"]*"[^\"]*)*$'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

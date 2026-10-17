@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-075-cisco-ise-radius
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 75: Cisco Identity Services Engine (ISE) 3.x; remote authentication/accounting syslog with attribute-value payload"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "=192.0.2.2,"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

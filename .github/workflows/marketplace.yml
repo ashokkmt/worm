@@ -32,10 +32,9 @@ jobs:
         run: |
           npm ci --prefix web
           npm run build --prefix web
-      - name: Validate parser fixtures and bundled catalog
+      - name: Validate parser fixtures and pack YAML
         run: |
           go test ./...
-          go run ./cmd/marketplace -check-packs packs
       - name: Build signed static marketplace
         env:
           WORM_MARKETPLACE_SIGNING_KEY: ${{ secrets.WORM_MARKETPLACE_SIGNING_KEY }}

@@ -1,0 +1,31 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-116-aws-iot-connect
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 116: AWS IoT Core; MQTT Connect log JSON from V2 CloudWatch logging"
+  author: WORM Owner
+spec:
+  sourceCategory: iot
+  format: json
+  match:
+    contains: "\"traceId\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+    src:
+      from: "sourceIp"
+      type: ip
+    src_port:
+      from: "sourcePort"
+      type: integer
+    event_action:
+      from: "status"
+      type: string
+  map:
+    event_time: event.time
+    src: event.src_endpoint.ip
+    src_port: event.src_endpoint.port
+    event_action: event.action
+  preserveUnmapped: true

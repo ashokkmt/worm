@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-087-mongodb-network
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 87: MongoDB 7.0 mongod/mongos; structured Extended JSON log entry per line"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: json
+  match:
+    contains: "listener"
+  fields:
+    event_message:
+      from: "msg"
+      type: string
+    sample_validation_87:
+      from: "t.$date"
+      type: timestamp
+      required: true
+  map:
+    event_message: event.message
+  preserveUnmapped: true

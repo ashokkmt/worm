@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-043-entra-directory-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 43: Microsoft Entra ID; AuditLogs directory audit record JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"Result\":"
+  fields:
+    event_time:
+      from: "TimeGenerated"
+      type: timestamp
+    event_action:
+      from: "Result"
+      type: string
+  map:
+    event_time: event.time
+    event_action: event.action
+  preserveUnmapped: true

@@ -1,0 +1,44 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-061-fortiweb-waf
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 61: Fortinet FortiWeb 7.4; WAF attack/event log as key=value header and body fields"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: text
+  match:
+    contains: "pri=alert"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+    src:
+      from: "src"
+      type: ip
+    dst:
+      from: "dst"
+      type: ip
+    src_port:
+      from: "src_port"
+      type: integer
+    dst_port:
+      from: "dst_port"
+      type: integer
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_61:
+      from: "date"
+      type: timestamp
+      required: true
+      layout: "2006-01-02"
+  map:
+    event_message: event.message
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+    dst_port: event.dst_endpoint.port
+    event_action: event.action
+  preserveUnmapped: true

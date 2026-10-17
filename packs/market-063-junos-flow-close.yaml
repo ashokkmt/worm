@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-063-junos-flow-close
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 63: Juniper SRX; RT_FLOW_SESSION_CLOSE security flow syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "W_SESSION_CL"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

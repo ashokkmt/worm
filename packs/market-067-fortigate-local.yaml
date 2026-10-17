@@ -1,0 +1,44 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-067-fortigate-local
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 67: Fortinet FortiGate FortiOS 7.4; local traffic key=value log"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: text
+  match:
+    contains: "policyid=0"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+    src:
+      from: "srcip"
+      type: ip
+    dst:
+      from: "dstip"
+      type: ip
+    src_port:
+      from: "srcport"
+      type: integer
+    dst_port:
+      from: "dstport"
+      type: integer
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_67:
+      from: "date"
+      type: timestamp
+      required: true
+      layout: "2006-01-02"
+  map:
+    event_message: event.message
+    src: event.src_endpoint.ip
+    dst: event.dst_endpoint.ip
+    src_port: event.src_endpoint.port
+    dst_port: event.dst_endpoint.port
+    event_action: event.action
+  preserveUnmapped: true

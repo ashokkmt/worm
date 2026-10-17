@@ -3,10 +3,13 @@ package decode
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"worm/internal/model"
 )
+
+var rfc3164Header = regexp.MustCompile(`^([A-Z][a-z]{2})\s+([0-9]{1,2})\s+(\d{2}:\d{2}:\d{2})\s+(\S+)(?:\s+(.*))?$`)
 
 // SyslogDecoder parses RFC 5424 and RFC 3164 (BSD) syslog messages.
 type SyslogDecoder struct{}
@@ -139,17 +142,14 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		// RFC 3164 (BSD): <PRI>Mmm dd hh:mm:ss HOSTNAME TAG[PID]: MSG
 		formatVariant = "syslog_rfc3164"
 		// Example: Sep 20 10:20:01 srv-prod-01 sshd[14523]: Accepted publickey...
-		parts := strings.SplitN(rest, " ", 4)
-		if len(parts) >= 4 {
-			// Month Day Time
-			headers["syslog_time"] = fmt.Sprintf("%s %s %s", parts[0], parts[1], parts[2])
-			remaining := parts[3]
+		parts := rfc3164Header.FindStringSubmatch(rest)
+		if len(parts) == 6 {
+			headers["syslog_time"] = fmt.Sprintf("%s %s %s", parts[1], parts[2], parts[3])
+			remaining := parts[5]
+			headers["syslog_host"] = parts[4]
 
-			hostAndMsg := strings.SplitN(remaining, " ", 2)
-			headers["syslog_host"] = hostAndMsg[0]
-
-			if len(hostAndMsg) > 1 {
-				appAndBody := strings.SplitN(hostAndMsg[1], ": ", 2)
+			if remaining != "" {
+				appAndBody := strings.SplitN(remaining, ": ", 2)
 				if len(appAndBody) == 2 {
 					appTag := appAndBody[0]
 					if pOpen := strings.Index(appTag, "["); pOpen != -1 && strings.HasSuffix(appTag, "]") {
@@ -160,12 +160,16 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 					}
 					msgBody = appAndBody[1]
 				} else {
-					msgBody = hostAndMsg[1]
+					msgBody = remaining
 				}
 			}
 		} else {
 			msgBody = rest
 		}
+	}
+
+	if strings.Count(msgBody, ",") >= 5 && !balancedQuotes(msgBody) {
+		return nil, fmt.Errorf("malformed syslog payload: unbalanced quoted field")
 	}
 
 	// Layered Syslog payload inspection (Section 4.1)
@@ -196,7 +200,10 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	fields["message"] = msgBody
 
 	// Extract key=value pairs from the message body if present (common in firewalls e.g. PAN-OS)
-	kvPairs := parseKeyValueTokens(msgBody)
+	kvPairs, err := parseKeyValueTokens(msgBody)
+	if err != nil {
+		return nil, err
+	}
 	for k, v := range kvPairs {
 		fields[k] = v
 	}
@@ -233,18 +240,83 @@ func wrapInnerRecords(innerRecs []*model.DecodedRecord, syslogHeaders map[string
 	return innerRecs
 }
 
-// parseKeyValueTokens extracts tokens in format `key=value` or `key="quoted value"`.
-func parseKeyValueTokens(s string) map[string]any {
+// parseKeyValueTokens extracts key=value tokens, preserving quoted values with spaces.
+func parseKeyValueTokens(s string) (map[string]any, error) {
 	result := make(map[string]any)
-	tokens := strings.Fields(s)
-
-	for _, token := range tokens {
-		eqIdx := strings.IndexByte(token, '=')
-		if eqIdx > 0 && eqIdx < len(token)-1 {
-			key := token[:eqIdx]
-			val := strings.Trim(token[eqIdx+1:], "\"")
-			result[key] = val
+	for i := 0; i < len(s); {
+		for i < len(s) && isSpace(s[i]) {
+			i++
+		}
+		start := i
+		for i < len(s) && s[i] != '=' && !isSpace(s[i]) {
+			i++
+		}
+		if i == len(s) || s[i] != '=' || i == start {
+			for i < len(s) && !isSpace(s[i]) {
+				i++
+			}
+			continue
+		}
+		key := s[start:i]
+		i++
+		if i < len(s) && (s[i] == '"' || s[i] == '\'') {
+			quote := s[i]
+			i++
+			var value strings.Builder
+			closed := false
+			for i < len(s) {
+				if s[i] == '\\' && i+1 < len(s) {
+					if s[i+1] == quote || s[i+1] == '\\' {
+						value.WriteByte(s[i+1])
+						i += 2
+						continue
+					}
+					value.WriteByte(s[i])
+					i++
+					continue
+				}
+				if s[i] == quote {
+					i++
+					closed = true
+					break
+				}
+				value.WriteByte(s[i])
+				i++
+			}
+			if !closed {
+				return nil, fmt.Errorf("malformed key=value payload: unterminated quoted value for %q", key)
+			}
+			result[key] = value.String()
+		} else {
+			startValue := i
+			for i < len(s) && !isSpace(s[i]) {
+				i++
+			}
+			if startValue < i {
+				result[key] = s[startValue:i]
+			}
 		}
 	}
-	return result
+	return result, nil
+}
+
+func isSpace(b byte) bool { return b == ' ' || b == '\t' || b == '\r' || b == '\n' }
+
+func balancedQuotes(s string) bool {
+	quoted := false
+	for i := 0; i < len(s); i++ {
+		if quoted && s[i] == '\\' && i+1 < len(s) {
+			i++
+			continue
+		}
+		if s[i] != '"' {
+			continue
+		}
+		if quoted && i+1 < len(s) && s[i+1] == '"' {
+			i++
+			continue
+		}
+		quoted = !quoted
+	}
+	return !quoted
 }

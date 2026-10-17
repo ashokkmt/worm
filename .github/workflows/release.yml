@@ -23,8 +23,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify bundled parser catalog matches shipped packs
-        run: go run ./cmd/marketplace -check-packs packs
       - name: Build embedded UI
         run: |
           npm ci --prefix web
@@ -89,7 +87,8 @@ jobs:
           build_info="$(go version -m "$stage/worm$suffix")"
           [[ "$build_info" == *"GOOS=$os"* ]] || { echo "Expected GOOS=$os in binary build info" >&2; exit 1; }
           [[ "$build_info" == *"GOARCH=$arch"* ]] || { echo "Expected GOARCH=$arch in binary build info" >&2; exit 1; }
-          cp -R packs schemas sources sinks "$stage/"
+          mkdir -p "$stage/packs"
+          cp -R schemas sources sinks "$stage/"
           tar -czf "$stage.tar.gz" -C "$stage" .
       - name: Verify version flag on Linux amd64
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'

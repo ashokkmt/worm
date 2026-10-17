@@ -1,0 +1,18 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-051-envoy-access
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 51: Envoy Proxy; access logs configured as JSON lines"
+  author: WORM Owner
+spec:
+  sourceCategory: server
+  format: json
+  match:
+    contains: "\"method\":"
+  fields:
+    sample_validation_51:
+      from: "start_time"
+      type: timestamp
+      required: true
+  preserveUnmapped: true

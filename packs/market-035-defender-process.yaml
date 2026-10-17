@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-035-defender-process
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 35: Microsoft Defender for Endpoint; DeviceProcessEvents JSON row"
+  author: WORM Owner
+spec:
+  sourceCategory: endpoint
+  format: json
+  match:
+    contains: "\"FileName\":"
+  fields:
+    event_time:
+      from: "Timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

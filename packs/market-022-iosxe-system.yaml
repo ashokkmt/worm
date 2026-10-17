@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-022-iosxe-system
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 22: Cisco IOS XE 17.x (Catalyst/ISR); system message syslog"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "S-5-CONFIG_I"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

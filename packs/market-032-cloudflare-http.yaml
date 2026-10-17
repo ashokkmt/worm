@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-032-cloudflare-http
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 32: Cloudflare Zone Logpush; HTTP Requests JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"ClientRequestURI\":"
+  fields:
+    src:
+      from: "ClientIP"
+      type: ip
+    sample_validation_32:
+      from: "RayID"
+      type: string
+      required: true
+  map:
+    src: event.src_endpoint.ip
+  preserveUnmapped: true

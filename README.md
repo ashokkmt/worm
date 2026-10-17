@@ -58,7 +58,7 @@ On Windows, use `.\bin\worm.exe` in place of `./bin/worm`. These source-build co
 
 ## Run a GitHub Release binary
 
-Choose the archive for your OS and CPU from [GitHub Releases](https://github.com/ashokkmt/worm/releases): `worm-vX.Y.Z-linux-amd64.tar.gz`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`, `windows-amd64`, or `windows-arm64`. Download its `SHA256SUMS` too and compare the archive hash before extracting. Each archive includes the binary and `packs/`, `schemas/`, `sources/`, and `sinks/`; keep these directories beside the binary and run from the extracted directory, because configuration paths are relative by default.
+Choose the archive for your OS and CPU from [GitHub Releases](https://github.com/ashokkmt/worm/releases): `worm-vX.Y.Z-linux-amd64.tar.gz`, `linux-arm64`, `darwin-amd64`, `darwin-arm64`, `windows-amd64`, or `windows-arm64`. Download its `SHA256SUMS` too and compare the archive hash before extracting. Each archive includes the binary, an empty `packs/` directory, and the `schemas/`, `sources/`, and `sinks/` configuration directories. Marketplace packs are installed into that local `packs/` directory; keep the directories beside the binary and run from the extracted directory because configuration paths are relative by default.
 
 On Linux/macOS, for example:
 
@@ -93,7 +93,7 @@ Marketplace access is off by default. Add these startup flags when you want this
   --marketplace-url https://ashokkmt.github.io/worm
 ```
 
-Without `--marketplace-online`, WORM uses its signed bundled catalog and any verified cached downloads. Customers who manage packs through the UI or CLI need an admin token configured on their own WORM instance; the marketplace itself is public and never receives that token. See [MARKETPLACE.md](MARKETPLACE.md) for installation, publishing, and signing details, and [CLI.md](CLI.md) for every startup option and command.
+Without `--marketplace-online`, WORM uses its signed catalog embedded in the binary and any verified cached downloads. The release starts with an empty local `packs/` directory; install packs from the marketplace or add your own YAML. Customers who manage packs through the UI or CLI need an admin token configured on their own WORM instance; the marketplace itself is public and never receives that token. See [MARKETPLACE.md](MARKETPLACE.md) for installation, publishing, and signing details, and [CLI.md](CLI.md) for every startup option and command.
 
 ## What WORM handles
 

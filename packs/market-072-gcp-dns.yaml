@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-072-gcp-dns
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 72: Google Cloud DNS; query log entry JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"sourceIP\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

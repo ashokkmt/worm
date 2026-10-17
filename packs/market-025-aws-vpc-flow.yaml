@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-025-aws-vpc-flow
+  version: 1.0.1
+  description: "Local parser profile for source inventory entry 25: AWS VPC Flow Logs; default space-delimited record"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: text
+  match:
+    regex: '^2\s+\d{12}\s+eni-\S+\s+'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

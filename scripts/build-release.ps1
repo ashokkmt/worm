@@ -64,7 +64,8 @@ try {
         $env:GOOS = $target.OS
         $env:GOARCH = $target.Arch
         Invoke-Checked go @('build', '-trimpath', '-ldflags', "-s -w -X 'main.Version=$Tag'", '-o', (Join-Path $stage $binary), './cmd/worm')
-        foreach ($directory in @('packs', 'schemas', 'sources', 'sinks')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $stage 'packs') | Out-Null
+        foreach ($directory in @('schemas', 'sources', 'sinks')) {
             Copy-Item -Recurse (Join-Path $repoRoot $directory) $stage
         }
 

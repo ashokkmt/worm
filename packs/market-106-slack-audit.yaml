@@ -1,0 +1,27 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-106-slack-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 106: Slack Enterprise Grid; Audit Logs API JSON event records"
+  author: WORM Owner
+spec:
+  sourceCategory: iam
+  format: json
+  match:
+    contains: "\"domain\":"
+  fields:
+    event_message:
+      from: "action"
+      type: string
+    event_action:
+      from: "action"
+      type: string
+    sample_validation_106:
+      from: "date_create"
+      type: timestamp
+      required: true
+  map:
+    event_message: event.activity_name
+    event_action: event.action
+  preserveUnmapped: true

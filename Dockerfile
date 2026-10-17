@@ -8,12 +8,12 @@ COPY cmd/worm/ ./cmd/worm/
 COPY web/embed.go ./web/embed.go
 COPY web/dist/ ./web/dist/
 RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -ldflags="-s -w" -o /bin/worm ./cmd/worm \
-    && mkdir -p /image-data/inbox /image-data/output
+    && mkdir -p /image-data/inbox /image-data/output /image-packs
 
 FROM scratch
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /bin/worm /bin/worm
-COPY --chown=10001:10001 packs/ /worm/packs/
+COPY --from=builder --chown=10001:10001 /image-packs/ /worm/packs/
 COPY schemas/ /worm/schemas/
 COPY --chown=10001:10001 sources/ /worm/sources/
 COPY --chown=10001:10001 sinks/ /worm/sinks/

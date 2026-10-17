@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-100-gcp-cloud-run
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 100: Google Cloud Run; request log JSON entries"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"service_name\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

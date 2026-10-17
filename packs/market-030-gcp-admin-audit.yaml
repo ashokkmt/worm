@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-030-gcp-admin-audit
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 30: Google Cloud; Cloud Audit Logs Admin Activity JSON"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"instance_id\":"
+  fields:
+    event_time:
+      from: "timestamp"
+      type: timestamp
+  map:
+    event_time: event.time
+  preserveUnmapped: true

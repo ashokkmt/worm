@@ -1,0 +1,19 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-020-meraki-mx-flows
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 20: Cisco Meraki MX84 / MX firmware family; flows role syslog; model is representative, firmware governs payload"
+  author: WORM Owner
+spec:
+  sourceCategory: network_device
+  format: syslog
+  match:
+    contains: "flows src=1"
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true

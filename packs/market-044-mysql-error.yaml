@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-044-mysql-error
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 44: MySQL 8.0 server; error log in JSON format"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: json
+  match:
+    contains: "\"thread\":"
+  fields:
+    event_message:
+      from: "msg"
+      type: string
+    event_time:
+      from: "time"
+      type: timestamp
+  map:
+    event_message: event.message
+    event_time: event.time
+  preserveUnmapped: true

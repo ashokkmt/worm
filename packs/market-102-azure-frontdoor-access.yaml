@@ -1,0 +1,23 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-102-azure-frontdoor-access
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 102: Azure Front Door Standard/Premium; access category exported as JSON; health probes excluded"
+  author: WORM Owner
+spec:
+  sourceCategory: cloud
+  format: json
+  match:
+    contains: "\"timeTaken\":"
+  fields:
+    event_message:
+      from: "operationName"
+      type: string
+    event_time:
+      from: "time"
+      type: timestamp
+  map:
+    event_message: event.activity_name
+    event_time: event.time
+  preserveUnmapped: true

@@ -16,6 +16,7 @@ var clfRegex = regexp.MustCompile(`^(\S+)\s+(\S+)\s+(\S+)\s+\[([^\]]+)\]\s+"([A-
 
 // genericKVRegex matches simple key=value pairs in unstructured text lines.
 var genericKVRegex = regexp.MustCompile(`(?:^|\s+)([a-zA-Z0-9_\.\-]+)=([^\s]+)`)
+var mysqlFileLogRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ][^\t]+\t\d+\s+(Query|Connect|Quit|Init DB)\b`)
 
 // TextDecoder implements the Decoder interface for declarative text, NCSA Combined Log Format,
 // and unstructured log lines.
@@ -49,14 +50,17 @@ func (d *TextDecoder) Detect(raw []byte) float64 {
 	if clfRegex.MatchString(s) {
 		return 0.85
 	}
+	if strings.HasPrefix(s, "REPORT RequestId:") || mysqlFileLogRegex.MatchString(s) {
+		return 0.80
+	}
 
 	// High confidence if it contains multiple structured key=value pairs
 	if kvs := genericKVRegex.FindAllStringSubmatch(s, -1); len(kvs) >= 2 {
 		return 0.65
 	}
 
-	// Arbitrary or unstructured text without recognized pattern should not exceed 0.50 threshold
-	return 0.10
+	// Keep otherwise unclassified UTF-8 log lines available to source-specific packs.
+	return 0.51
 }
 
 // Decode parses a raw text payload into a DecodedRecord.
@@ -122,11 +126,12 @@ func (d *TextDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 		fields["message"] = s
 
 		// Extract any embedded key=value tokens
-		matches := genericKVRegex.FindAllStringSubmatch(s, -1)
-		for _, m := range matches {
-			if len(m) == 3 {
-				fields[m[1]] = m[2]
-			}
+		pairs, err := parseKeyValueTokens(s)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range pairs {
+			fields[k] = v
 		}
 	}
 

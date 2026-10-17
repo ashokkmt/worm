@@ -470,6 +470,22 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 				continue
 			}
 		} else {
+			if decRec.Format == "text" && len(decRec.Fields) <= 1 {
+				if !p.persistQuarantine(ctx, model.QuarantineEntry{
+					RawID:          rawEvt.RawID,
+					RecordOrdinal:  decRec.RecordOrdinal,
+					RawSHA256:      rawEvt.RawSHA256,
+					Stage:          "parser_match",
+					Reason:         "unknown_source",
+					ErrorDetails:   "unclassified text requires a matching parser pack",
+					RawPreview:     childPreview,
+					ReplayEligible: true,
+					QuarantinedAt:  time.Now().UTC(),
+				}) {
+					unresolvedChild = true
+				}
+				continue
+			}
 			// BA-018: Generic fallback when no pack manager is active: validated pass-through
 			var randBytes [4]byte
 			_, _ = rand.Read(randBytes[:])

@@ -1,0 +1,20 @@
+apiVersion: worm.io/v1
+kind: LogSource
+metadata:
+  name: market-046-mysql-general-query
+  version: 1.0.0
+  description: "Local parser profile for source inventory entry 46: MySQL 8.0 server; general query log text"
+  author: WORM Owner
+spec:
+  sourceCategory: database
+  format: text
+  match:
+    contains: "000000Z\t123"
+    regex: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\t\d+\s+(Query|Connect|Quit|Init DB)\b'
+  fields:
+    event_message:
+      from: "message"
+      type: string
+  map:
+    event_message: event.message
+  preserveUnmapped: true
