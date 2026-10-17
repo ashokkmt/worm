@@ -243,6 +243,7 @@ func main() {
 			}
 		}
 	}
+	fatal(writePackIndexes(*site, &cat))
 	fmt.Printf("Built signed catalog with %d packs in %s\n", len(cat.Packs), *site)
 }
 

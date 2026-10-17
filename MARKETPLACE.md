@@ -12,6 +12,8 @@ The public registry is hosted at [https://ashokkmt.github.io/worm](https://ashok
 https://ashokkmt.github.io/worm/packs/network-device-asa/1.0.3/pack.yaml
 ```
 
+Browse the human-readable pack index at [https://ashokkmt.github.io/worm/packs/](https://ashokkmt.github.io/worm/packs/). Select a pack to see its published versions and links to each raw YAML artifact. The versioned artifact URL is intended to display YAML directly; GitHub Pages does not generate folder listings automatically.
+
 GitHub Pages serves static files, so the registry needs no running WORM server. The root `packs/` directory in the source repository holds the owner's current pack YAML; it is not copied into binary archives or the Docker image. Those customer packages start with an empty `packs/` directory, where marketplace-installed and user-created YAML files are stored. `marketplace/metadata.json` holds searchable coverage and release notes. `marketplace/releases/` preserves old published YAML versions. The publisher generates `marketplace-site/`; GitHub Actions publishes that generated folder. The marketplace's generated site is not a customer's active pack folder.
 
 ## Start WORM with or without online marketplace access
@@ -100,7 +102,7 @@ go run ./cmd/marketplace \
   -key-file "$HOME/.config/worm/marketplace-signing-key.b64"
 ```
 
-This command validates the packs and release history, calculates each artifact's SHA-256, signs the catalog, updates the signed seed, and writes the static files under `marketplace-site/`. Serving this directory locally is useful for testing, but does not publish it to other users.
+This command validates the packs and release history, calculates each artifact's SHA-256, signs the catalog, updates the signed seed, and writes the catalog index, version pages, and static files under `marketplace-site/`. Serving this directory locally is useful for testing, but does not publish it to other users.
 
 For changed existing packs, prepare the release **before editing the YAML**. List every pack filename that you plan to change; the command archives the exact current bytes, bumps each version, and creates release metadata in one batch:
 
