@@ -268,7 +268,7 @@ func formatMatches(packFormat, recFormat string) bool {
 	case "text":
 		return strings.HasPrefix(recFormat, "text")
 	case "json":
-		return strings.HasPrefix(recFormat, "json")
+		return strings.HasPrefix(recFormat, "json") || recFormat == "ndjson"
 	case "csv":
 		return strings.HasPrefix(recFormat, "csv")
 	case "cef":

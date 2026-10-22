@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"worm/internal/api"
+	"worm/internal/connections"
 	"worm/internal/model"
 	"worm/internal/packs"
 	"worm/internal/pipeline"
@@ -590,4 +591,73 @@ func TestMarketplaceCatalogAndProtectedRefresh(t *testing.T) {
 	if refresh.Code != http.StatusForbidden {
 		t.Fatalf("unauthenticated refresh status = %d, want 403", refresh.Code)
 	}
+}
+
+func TestCORSAllowsOnlyExactLoopbackHosts(t *testing.T) {
+	srv, _, _, _ := setupTestServer(t)
+	for _, tc := range []struct {
+		origin string
+		allow  bool
+	}{
+		{"https://localhost:5173", true},
+		{"http://127.0.0.1:3000", true},
+		{"https://localhost.attacker.example", false},
+		{"http://127.0.0.1.attacker.example", false},
+		{"https://user@localhost", false},
+		{"https://localhost.evil:9090", false},
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
+		req.Header.Set("Origin", tc.origin)
+		res := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(res, req)
+		got := res.Header().Get("Access-Control-Allow-Origin") == tc.origin
+		if got != tc.allow {
+			t.Errorf("origin %q allowed=%v, want %v", tc.origin, got, tc.allow)
+		}
+	}
+}
+
+func TestApplyConnectionReusesManagedFilename(t *testing.T) {
+	srv, _, _, dir := setupTestServer(t)
+	manager := connections.NewManager(dir)
+	content, err := os.ReadFile(filepath.Join("..", "..", "sinks", "http-siem.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "http-siem.yaml"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.LoadDir(dir); err != nil {
+		t.Fatal(err)
+	}
+	srv.SetConnManager(manager, dir)
+	updated := strings.Replace(string(content), "version: 1.0.0", "version: 1.0.1", 1)
+	body, _ := json.Marshal(map[string]string{"yaml_content": updated})
+	res := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/v1/connections/apply", bytes.NewReader(body)))
+	if res.Code != http.StatusOK {
+		t.Fatalf("apply status=%d body=%s", res.Code, res.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "siem-events.yaml")); !os.IsNotExist(err) {
+		t.Fatalf("unexpected identity-based duplicate file, stat err=%v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "http-siem.yaml"))
+	if err != nil || !strings.Contains(string(got), "version: 1.0.1") {
+		t.Fatalf("managed file was not updated: err=%v", err)
+	}
+}
+
+func TestActivatePackRejectsMissingManager(t *testing.T) {
+	srv, store, pipe, _ := setupTestServer(t)
+	cfg := api.ConfigInfo{AdminToken: "test-token"}
+	missing := api.NewServer("127.0.0.1:0", store, pipe, nil, "", cfg, fstest.MapFS{"index.html": {Data: []byte("ui")}}, "test")
+	body := []byte(`{"yaml_content":"apiVersion: worm.io/v1\nkind: LogSource\nmetadata:\n  name: sample\n  version: 1.0.0\n  description: sample\n  author: test\nspec:\n  sourceCategory: application\n  format: json\n  match:\n    contains: sample\n  fields: {}\n"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/packs/activate", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer test-token")
+	res := httptest.NewRecorder()
+	missing.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("activation without manager returned %d: %s", res.Code, res.Body.String())
+	}
+	_ = srv
 }

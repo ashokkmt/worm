@@ -118,6 +118,9 @@ func (d *XMLDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 			}
 
 		case xml.StartElement:
+			if rootNode != nil && len(stack) == 0 {
+				return nil, errors.New("multiple top-level XML elements are not allowed")
+			}
 			if len(stack) >= MaxDepth {
 				return nil, fmt.Errorf("xml depth limit exceeded: depth > %d", MaxDepth)
 			}

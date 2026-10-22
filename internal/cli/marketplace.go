@@ -245,6 +245,10 @@ func UpgradeAllMarketplacePacksCLI(uiAddr, packsDir string) {
 }
 
 func InstallMarketplacePackLocalCLI(name, version, dir string) {
+	installMarketplacePackLocalCLI(name, version, dir, version != "" && version != "latest")
+}
+
+func installMarketplacePackLocalCLI(name, version, dir string, pinned bool) {
 	lock, err := packs.AcquireDirectoryLock(dir)
 	if err != nil {
 		failMarketplace(err)
@@ -293,11 +297,10 @@ func InstallMarketplacePackLocalCLI(name, version, dir string) {
 	expected := &packs.PackFileExpectation{Exists: false}
 	if installed, exists := manifest.Entries[name]; exists {
 		filename = installed.Filename
-		current, e := os.ReadFile(filepath.Join(dir, filename))
-		if e != nil {
+		if _, e := readUnmodifiedMarketplacePack(dir, installed); e != nil {
 			failMarketplace(e)
 		}
-		expected = &packs.PackFileExpectation{Exists: true, Digest: marketplace.Digest(current)}
+		expected = &packs.PackFileExpectation{Exists: true, Digest: installed.Digest}
 	} else if _, e := os.ReadFile(filepath.Join(dir, filename)); e == nil {
 		failMarketplace(fmt.Errorf("local pack already occupies %s", filename))
 	} else if !os.IsNotExist(e) {
@@ -309,10 +312,21 @@ func InstallMarketplacePackLocalCLI(name, version, dir string) {
 	}
 	mgr := packs.NewSnapshotManager(snap)
 	mgr.SetPacksDir(dir)
-	if _, err = mgr.ApplyPackFileWithState(filename, data, expected, "marketplace", version != "" && version != "latest"); err != nil {
+	if _, err = mgr.ApplyPackFileWithState(filename, data, expected, "marketplace", pinned); err != nil {
 		failMarketplace(err)
 	}
 	fmt.Printf("Installed %s %s; active on next startup.\n", name, release.Version)
+}
+
+func readUnmodifiedMarketplacePack(dir string, installed packs.PackInstall) ([]byte, error) {
+	current, err := os.ReadFile(filepath.Join(dir, installed.Filename))
+	if err != nil {
+		return nil, err
+	}
+	if marketplace.Digest(current) != installed.Digest {
+		return nil, fmt.Errorf("pack %q was modified locally", installed.Name)
+	}
+	return current, nil
 }
 
 func RemoveMarketplacePackLocalCLI(name, dir string) {
@@ -425,7 +439,7 @@ func UpgradeMarketplacePackLocalCLI(name, dir string) {
 				fmt.Printf("%s is current at %s.\n", name, entry.Version)
 				return
 			}
-			InstallMarketplacePackLocalCLI(name, target.Version, dir)
+			installMarketplacePackLocalCLI(name, target.Version, dir, false)
 			return
 		}
 	}

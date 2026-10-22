@@ -349,6 +349,93 @@ func TestStartupRecoveryResumesOnlyUncommittedBatchChildren(t *testing.T) {
 	}
 }
 
+func TestStartupRecoveryAfterQuarantinedBatchChild(t *testing.T) {
+	store, err := rawstore.New(filepath.Join(t.TempDir(), "quarantine-recovery.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ctx := context.Background()
+	raw, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte(`[{"id":"first"},{"id":"second"}]`), ReceivedAt: time.Now().UTC()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.QuarantineChild(ctx, model.QuarantineEntry{QuarantineID: "first-child", RawID: raw.RawID, RecordOrdinal: 0, RawSHA256: raw.RawSHA256, Stage: "parser_match", Reason: "unknown_source", ReplayEligible: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.UpdateStatus(ctx, raw.RawID, model.StatusAccepted); err != nil {
+		t.Fatal(err)
+	}
+	p := New(Config{Workers: 1, BufferSize: 4}, store, NewMemorySink())
+	p.Start()
+	p.Stop()
+	if n, _ := store.CountNormalized(ctx); n != 1 {
+		t.Fatalf("recovered normalized children = %d, want 1", n)
+	}
+	if n, _ := store.CountQuarantine(ctx); n != 1 {
+		t.Fatalf("quarantine children = %d, want 1", n)
+	}
+	parent, err := store.Retrieve(ctx, raw.RawID)
+	if err != nil || parent.Status != model.StatusPartial {
+		t.Fatalf("parent status = %q, err=%v; want partial", parent.Status, err)
+	}
+}
+
+func TestStopWakesBlockedSubmitterWithoutClosingChannelRace(t *testing.T) {
+	store, err := rawstore.New(filepath.Join(t.TempDir(), "stop-race.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	p := New(Config{Workers: 1, BufferSize: 1}, store, NewMemorySink())
+	p.Start()
+	tx, err := store.DB().BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE raw_events SET status=status WHERE raw_id='blocked'`); err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := p.Submit(model.IngestedRecord{Transport: "test", RawBytes: []byte(`{"message":"worker"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	depth, _ := p.BufferUsage()
+	for depth != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+		depth, _ = p.BufferUsage()
+	}
+	if err := p.Submit(model.IngestedRecord{Transport: "test", RawBytes: []byte(`{"message":"buffered"}`)}); err != nil {
+		t.Fatal(err)
+	}
+	submitted := make(chan error, 1)
+	go func() {
+		submitted <- p.SubmitWait(context.Background(), model.IngestedRecord{Transport: "test", RawBytes: []byte(`{"message":"blocked"}`)})
+	}()
+	select {
+	case err := <-submitted:
+		t.Fatalf("SubmitWait did not block on a full queue: %v", err)
+	case <-time.After(20 * time.Millisecond):
+	}
+	stopped := make(chan struct{})
+	go func() { p.Stop(); close(stopped) }()
+	select {
+	case err := <-submitted:
+		if err == nil {
+			t.Fatal("blocked submit should be rejected during shutdown")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("shutdown did not wake blocked submitter")
+	}
+	_ = tx.Rollback()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("pipeline did not drain after the database lock was released")
+	}
+}
+
 func TestEmptyBatchAccounting_BA004(t *testing.T) {
 	p, store, _ := setupTestPipeline(t, 2)
 	ctx := context.Background()

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -70,6 +71,39 @@ func TestLoadPack_AllPacks(t *testing.T) {
 		pack, ok := snap.GetPack(name)
 		if !ok || pack == nil {
 			t.Errorf("expected pack %q to be loaded", name)
+		}
+	}
+}
+
+func TestJSONPackMatchesNDJSONRecords(t *testing.T) {
+	if !formatMatches("json", "ndjson") {
+		t.Fatal("JSON parser packs must accept decoded NDJSON records")
+	}
+}
+
+func TestOnboardingPresetsLoadAndMatchTheirSamples(t *testing.T) {
+	root := findProjectRoot(t)
+	source := loadFixture(t, root, "web/src/pages/Onboard.tsx")
+	for _, name := range []string{"custom_firewall", "custom_json_app"} {
+		pattern := regexp.MustCompile(`(?s)` + regexp.QuoteMeta(name) + `:\s*\{\s*yaml:\s*` + "`" + `(.*?)` + "`" + `,\s*sample:\s*` + "`" + `(.*?)` + "`")
+		match := pattern.FindSubmatch(source)
+		if len(match) != 3 {
+			t.Fatalf("could not extract %s onboarding preset", name)
+		}
+		pack, err := LoadPack(strings.NewReader(string(match[1])))
+		if err != nil {
+			t.Fatalf("%s preset does not load: %v", name, err)
+		}
+		_, records, err := decode.DefaultRegistry().DetectAndDecode([]byte(match[2]))
+		if err != nil || len(records) == 0 {
+			t.Fatalf("%s sample does not decode: records=%d err=%v", name, len(records), err)
+		}
+		snapshot, err := NewSnapshot("onboarding-"+name, []*ParserPack{pack})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := snapshot.Match(records[0]); err != nil {
+			t.Fatalf("%s preset does not match its sample: %v", name, err)
 		}
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -1314,6 +1315,10 @@ type activateRequest struct {
 }
 
 func (s *Server) handleActivatePack(w http.ResponseWriter, r *http.Request) {
+	if s.packManager == nil {
+		s.jsonError(w, http.StatusServiceUnavailable, "parser pack manager not configured")
+		return
+	}
 	var req activateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.jsonError(w, http.StatusBadRequest, "invalid json body: "+err.Error())
@@ -1342,9 +1347,14 @@ func (s *Server) handleActivatePack(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusBadRequest, "failed to apply pack: "+err.Error())
 			return
 		}
-	} else if s.packManager != nil {
+	} else {
 		// In-memory only manager
-		snap, err := packs.NewSnapshot(fmt.Sprintf("snap-%d", time.Now().UnixNano()), append(s.packManager.Active().ListPacks(), newPack))
+		active := s.packManager.Active()
+		if active == nil {
+			s.jsonError(w, http.StatusServiceUnavailable, "active parser pack snapshot not configured")
+			return
+		}
+		snap, err := packs.NewSnapshot(fmt.Sprintf("snap-%d", time.Now().UnixNano()), append(active.ListPacks(), newPack))
 		if err != nil {
 			s.jsonError(w, http.StatusBadRequest, "failed to activate snapshot: "+err.Error())
 			return
@@ -1492,7 +1502,10 @@ func (s *Server) handleApplyConnection(w http.ResponseWriter, r *http.Request) {
 			s.jsonError(w, http.StatusBadRequest, "invalid connection yaml: "+pErr.Error())
 			return
 		}
-		fn = parsed.Metadata.Name + ".yaml"
+		fn, pErr = s.connManager.Filename(parsed.Metadata.Name)
+		if pErr != nil {
+			fn = parsed.Metadata.Name + ".yaml"
+		}
 	}
 	applied, err := s.connManager.ApplyFile(fn, []byte(req.YamlContent))
 	if err != nil {
@@ -1573,10 +1586,9 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 		origin := r.Header.Get("Origin")
 		if origin != "" {
 			// Restrict to local/internal origins rather than wildcard *
-			if strings.HasPrefix(origin, "http://localhost") ||
-				strings.HasPrefix(origin, "http://127.0.0.1") ||
-				strings.HasPrefix(origin, "https://localhost") ||
-				strings.HasPrefix(origin, "https://127.0.0.1") {
+			if u, err := url.Parse(origin); err == nil && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" &&
+				(u.Scheme == "http" || u.Scheme == "https") &&
+				(u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") && u.Host != "" {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 			}
 		}

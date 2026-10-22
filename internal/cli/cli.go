@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -487,19 +488,16 @@ func ListQuarantineCLI(uiAddr, dbPath string) {
 func ReplaySingleCLI(qID, uiAddr string) {
 	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Post(baseURL+"/api/v1/quarantine/"+qID+"/replay", "application/json", nil)
+	req, err := newReplayRequest(baseURL + "/api/v1/quarantine/" + url.PathEscape(qID) + "/replay")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Build replay request: %v\n", err)
+		os.Exit(1)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to contact WORM server at %s: %v\n", baseURL, err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Fprintf(os.Stderr, "Replay failed: %s\n", string(body))
-		os.Exit(1)
-	}
-
 	var res struct {
 		Status string `json:"status"`
 		Event  struct {
@@ -508,7 +506,10 @@ func ReplaySingleCLI(qID, uiAddr string) {
 			} `json:"worm"`
 		} `json:"event"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&res)
+	if err := decodeReplayResponse(resp, &res); err != nil {
+		fmt.Fprintf(os.Stderr, "Replay failed: %v\n", err)
+		os.Exit(1)
+	}
 	fmt.Printf("\n[WORM] Replay Successful!\n")
 	fmt.Printf("  * Quarantine Record: %s (Removed from DLQ)\n", qID)
 	fmt.Printf("  * Normalized Event:  %s\n\n", res.Event.Worm.EventID)
@@ -517,25 +518,54 @@ func ReplaySingleCLI(qID, uiAddr string) {
 func ReplayAllCLI(uiAddr string) {
 	baseURL := GetBaseURL(uiAddr)
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(baseURL+"/api/v1/quarantine/replay-all", "application/json", nil)
+	req, err := newReplayRequest(baseURL + "/api/v1/quarantine/replay-all")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: Build replay request: %v\n", err)
+		os.Exit(1)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to contact WORM server at %s: %v\n", baseURL, err)
 		os.Exit(1)
 	}
-	defer resp.Body.Close()
 
 	var res struct {
 		Total    int `json:"total"`
 		Replayed int `json:"replayed"`
 		Failed   int `json:"failed"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&res)
+	if err := decodeReplayResponse(resp, &res); err != nil {
+		fmt.Fprintf(os.Stderr, "Replay failed: %v\n", err)
+		os.Exit(1)
+	}
 
 	fmt.Printf("\n--- WORM Bulk Replay Report ---\n")
 	fmt.Printf("  * Total Eligible:  %d\n", res.Total)
 	fmt.Printf("  * Replayed:        %d (Normalized and removed from DLQ)\n", res.Replayed)
 	fmt.Printf("  * Failed:          %d\n", res.Failed)
 	fmt.Printf("-------------------------------\n\n")
+}
+
+func newReplayRequest(endpoint string) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	setMarketplaceAuth(req)
+	return req, nil
+}
+
+func decodeReplayResponse(resp *http.Response, target any) error {
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("invalid replay response: %w", err)
+	}
+	return nil
 }
 
 // --- Parser Packs CLI (kind: ParserPack) ---

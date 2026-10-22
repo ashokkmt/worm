@@ -137,10 +137,6 @@ func validateRecord(record rollbackRecord) error {
 func writeRollback(dir string, record rollbackRecord) error {
 	return writeRecord(rollbackPath(dir), record)
 }
-func writeTransaction(dir string, record rollbackRecord) error {
-	return writeRecord(transactionPath(dir), record)
-}
-
 func writeTransactionRecord(dir string, record transactionRecord) error {
 	data, err := json.Marshal(record)
 	if err != nil {
@@ -609,17 +605,6 @@ func (m *SnapshotManager) rollbackWithRecord(override *rollbackRecord) error {
 	m.active = m.previous
 	m.previous = nil
 	return nil
-}
-
-func recordForState(filename, target string) (rollbackRecord, error) {
-	b, err := os.ReadFile(target)
-	if os.IsNotExist(err) {
-		return rollbackRecord{Filename: filename}, nil
-	}
-	if err != nil {
-		return rollbackRecord{}, err
-	}
-	return rollbackRecord{Filename: filename, Existed: true, Content: b}, nil
 }
 
 // LoadDir reads and parses all .yaml and .yml files from a directory,

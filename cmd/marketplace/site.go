@@ -4,6 +4,8 @@ import (
 	"html/template"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"worm/internal/marketplace"
@@ -75,6 +77,50 @@ func writePackIndexes(site string, catalog *marketplace.Catalog) error {
 		}
 	}
 	return nil
+}
+
+func writeRepositoryIndex(path string, catalog *marketplace.Catalog) error {
+	packs := append([]marketplace.Pack(nil), catalog.Packs...)
+	sort.Slice(packs, func(i, j int) bool { return packs[i].Name < packs[j].Name })
+	var b strings.Builder
+	b.WriteString("# WORM Marketplace Pack Index\n\n")
+	b.WriteString("Generated from the signed marketplace catalog. The catalog contains ")
+	b.WriteString(strconv.Itoa(len(packs)))
+	b.WriteString(" unique pack identities and ")
+	releaseCount := 0
+	for _, pack := range packs {
+		releaseCount += len(pack.Releases)
+	}
+	b.WriteString(strconv.Itoa(releaseCount))
+	b.WriteString(" published releases. Browse the [online marketplace](https://ashokkmt.github.io/worm/packs/) for the same index and versioned YAML downloads.\n\n")
+	b.WriteString("| Pack | Description | Versions and release notes | Vendor / product | Category | Format | Models | Tags |\n")
+	b.WriteString("|---|---|---|---|---|---|---|---|\n")
+	for _, pack := range packs {
+		versions := make([]string, 0, len(pack.Releases))
+		for _, release := range pack.Releases {
+			label := "[" + markdownCell(release.Version) + "](https://ashokkmt.github.io/worm/" + release.Artifact + ")"
+			if release.Withdrawn {
+				label += " (withdrawn)"
+			}
+			if release.Changelog != "" {
+				label += ": " + markdownCell(release.Changelog)
+			}
+			versions = append(versions, label)
+		}
+		vendorProduct := pack.Product
+		if pack.Vendor != "" {
+			vendorProduct = pack.Vendor + " / " + pack.Product
+		}
+		b.WriteString("| [" + markdownCell(pack.Name) + "](https://ashokkmt.github.io/worm/packs/" + pack.Name + "/) | " + markdownCell(pack.Description) + " | " + strings.Join(versions, "<br>") + " | " + markdownCell(vendorProduct) + " | " + markdownCell(pack.Category) + " | " + markdownCell(pack.Format) + " | " + markdownCell(strings.Join(pack.Models, ", ")) + " | " + markdownCell(strings.Join(pack.Tags, ", ")) + " |\n")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+func markdownCell(value string) string {
+	return strings.NewReplacer("|", "\\|", "\r", " ", "\n", " ").Replace(value)
 }
 
 func writeTemplate(path string, tmpl *template.Template, data any) error {

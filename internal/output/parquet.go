@@ -245,6 +245,9 @@ func (s *ParquetSink) flushPartition(partKey string, events []*model.NormalizedE
 	if _, err = w.Write(rows); err == nil {
 		err = w.Close()
 	}
+	if err == nil {
+		err = f.Sync()
+	}
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
@@ -252,8 +255,11 @@ func (s *ParquetSink) flushPartition(partKey string, events []*model.NormalizedE
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("write parquet: %w", err)
 	}
-	if err := os.Rename(tmpPath, finalPath); err != nil {
+	if err := replaceFile(tmpPath, finalPath); err != nil {
 		return fmt.Errorf("commit parquet: %w", err)
+	}
+	if err := syncDirectory(s.cfg.Path); err != nil {
+		return fmt.Errorf("sync parquet directory: %w", err)
 	}
 
 	data, err := os.ReadFile(finalPath)
@@ -292,10 +298,23 @@ func (s *ParquetSink) updateManifest(fileMeta ManifestFile) error {
 	}
 
 	tmpManifest := manifestPath + ".tmp"
-	if err := os.WriteFile(tmpManifest, data, 0644); err != nil {
+	f, err := os.OpenFile(tmpManifest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmpManifest, manifestPath)
+	if _, err = f.Write(data); err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err := replaceFile(tmpManifest, manifestPath); err != nil {
+		return err
+	}
+	return syncDirectory(s.cfg.Path)
 }
 
 func (s *ParquetSink) Close() error {

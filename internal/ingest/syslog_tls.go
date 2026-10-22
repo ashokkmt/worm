@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -132,47 +133,53 @@ func (l *SyslogTLSListener) handleConn(ctx context.Context, conn net.Conn, out c
 
 		if peekBytes[0] >= '1' && peekBytes[0] <= '9' {
 			// RFC 6587 octet counting: <MSG-LEN> <MSG>
-			lenStr, err := reader.ReadString(' ')
+			lenStr, err := readBoundedFrame(reader, ' ', 16)
 			if err != nil {
 				return
 			}
-			msgLen, err := strconv.Atoi(strings.TrimSpace(lenStr))
-			if err == nil && msgLen > 0 && msgLen <= 10*1024*1024 {
-				payload := make([]byte, msgLen)
-				_, err := io.ReadFull(reader, payload)
-				if err != nil {
-					return
+			msgLen, err := strconv.Atoi(strings.TrimSpace(string(lenStr)))
+			if err != nil || msgLen <= 0 || msgLen > maxSyslogFrameBytes {
+				return
+			}
+			payload := make([]byte, msgLen)
+			_, err = io.ReadFull(reader, payload)
+			if err != nil {
+				return
+			}
+			if len(payload) > 0 {
+				ackChan := make(chan error, 1)
+				record := model.IngestedRecord{
+					RawBytes:   payload,
+					Transport:  "syslog_tls",
+					SourceIP:   remoteHost,
+					SourcePort: remotePort,
+					ReceivedAt: time.Now().UTC(), Metadata: model.ReceiveMetadata{Listener: l.addr},
+					Ack: ackChan,
 				}
-				trimmed := bytes.TrimRight(payload, "\r\n")
-				if len(trimmed) > 0 {
-					ackChan := make(chan error, 1)
-					record := model.IngestedRecord{
-						RawBytes:   trimmed,
-						Transport:  "syslog_tls",
-						SourceIP:   remoteHost,
-						SourcePort: remotePort,
-						ReceivedAt: time.Now().UTC(), Metadata: model.ReceiveMetadata{Listener: l.addr},
-						Ack: ackChan,
-					}
+				select {
+				case out <- record:
 					select {
-					case out <- record:
-						select {
-						case <-ackChan:
-						case <-ctx.Done():
-							return
-						}
+					case <-ackChan:
 					case <-ctx.Done():
 						return
 					}
+				case <-ctx.Done():
+					return
 				}
-				continue
 			}
+			continue
 		}
 
 		// RFC 6587 non-transparent framing (newline-delimited)
-		line, err := reader.ReadBytes('\n')
+		line, err := readBoundedFrame(reader, '\n', maxSyslogFrameBytes+2)
+		if errors.Is(err, errFrameTooLarge) {
+			return
+		}
 		if len(line) > 0 {
 			trimmed := bytes.TrimRight(line, "\r\n")
+			if len(trimmed) > maxSyslogFrameBytes {
+				return
+			}
 			if len(trimmed) > 0 {
 				ackChan := make(chan error, 1)
 				record := model.IngestedRecord{

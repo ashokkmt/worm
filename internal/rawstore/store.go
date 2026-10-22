@@ -325,6 +325,15 @@ func (s *RawStore) Verify(ctx context.Context, rawID string) (bool, string, erro
 // Quarantine persists an unparseable or schema-violating event in the quarantine table
 // and updates the raw event status to "quarantined".
 func (s *RawStore) Quarantine(ctx context.Context, entry model.QuarantineEntry) error {
+	return s.quarantine(ctx, entry, true)
+}
+
+// QuarantineChild records a batch child while keeping its parent recoverable until the batch finalizes.
+func (s *RawStore) QuarantineChild(ctx context.Context, entry model.QuarantineEntry) error {
+	return s.quarantine(ctx, entry, false)
+}
+
+func (s *RawStore) quarantine(ctx context.Context, entry model.QuarantineEntry, finalize bool) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
@@ -374,10 +383,10 @@ func (s *RawStore) Quarantine(ctx context.Context, entry model.QuarantineEntry) 
 	if err != nil {
 		return fmt.Errorf("failed to insert quarantine entry: %w", err)
 	}
-
-	uQuery := `UPDATE raw_events SET status = ? WHERE raw_id = ?;`
-	if _, err := tx.ExecContext(ctx, uQuery, string(model.StatusQuarantined), entry.RawID); err != nil {
-		return fmt.Errorf("failed to update raw event status to quarantined: %w", err)
+	if finalize {
+		if _, err := tx.ExecContext(ctx, `UPDATE raw_events SET status = ? WHERE raw_id = ?`, string(model.StatusQuarantined), entry.RawID); err != nil {
+			return fmt.Errorf("failed to update raw event status to quarantined: %w", err)
+		}
 	}
 
 	return tx.Commit()
@@ -606,6 +615,55 @@ func (s *RawStore) DeleteNormalizedChild(ctx context.Context, rawID string, ordi
 func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.NormalizedEvent, destinations []string) error {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := storeNormalizedTx(ctx, tx, event, destinations); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// ResolveQuarantineWithOutbox atomically replaces one quarantined child and updates its parent outcome.
+func (s *RawStore) ResolveQuarantineWithOutbox(ctx context.Context, qID string, event *model.NormalizedEvent, destinations []string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := storeNormalizedTx(ctx, tx, event, destinations); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM quarantine WHERE quarantine_id=? AND raw_id=? AND record_ordinal=?`, qID, event.Worm.RawID, event.Worm.RecordOrdinal)
+	if err != nil {
+		return fmt.Errorf("delete resolved quarantine entry: %w", err)
+	}
+	if n, _ := result.RowsAffected(); n != 1 {
+		return fmt.Errorf("quarantine entry %s was not resolved", qID)
+	}
+	var normalized, quarantined int64
+	if err := tx.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM normalized_events WHERE raw_id=?),
+		(SELECT COUNT(*) FROM quarantine WHERE raw_id=?)`, event.Worm.RawID, event.Worm.RawID).Scan(&normalized, &quarantined); err != nil {
+		return err
+	}
+	status := model.StatusNormalized
+	if normalized == 0 && quarantined > 0 {
+		status = model.StatusQuarantined
+	} else if quarantined > 0 {
+		status = model.StatusPartial
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE raw_events SET status=? WHERE raw_id=?`, string(status), event.Worm.RawID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func storeNormalizedTx(ctx context.Context, tx *sql.Tx, event *model.NormalizedEvent, destinations []string) error {
 	data, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal normalized event: %w", err)
@@ -629,11 +687,6 @@ func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.N
 	if v, ok := event.OCSF["message"].(string); ok {
 		msg = v
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
 	var existing string
 	if err = tx.QueryRowContext(ctx, "SELECT event_id FROM normalized_events WHERE raw_id=? AND record_ordinal=? LIMIT 1", event.Worm.RawID, event.Worm.RecordOrdinal).Scan(&existing); err == nil && existing != "" {
 		event.Worm.EventID = existing
@@ -650,7 +703,7 @@ func (s *RawStore) StoreNormalizedWithOutbox(ctx context.Context, event *model.N
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (s *RawStore) DB() *sql.DB { return s.db }
@@ -861,19 +914,10 @@ func (s *RawStore) VerifyNormalized(ctx context.Context, eventID string) (*Norma
 	}
 	messageMatches := (colMsg == expectedMsg)
 
-	// Verify raw event and cross-check that message exists in raw wire payload
+	// Verify parent raw bytes independently; decoded messages need not be literal wire substrings.
 	rawMatches, _, rawErr := s.Verify(ctx, rawID)
 	rawValid := (rawErr == nil && rawMatches)
-	rawEvt, _ := s.Retrieve(ctx, rawID)
-
-	rawContentMatches := true
-	if rawEvt != nil && colMsg != "" {
-		if !strings.Contains(string(rawEvt.Payload), colMsg) {
-			rawContentMatches = false
-		}
-	}
-
-	passed := hashMatches && messageMatches && rawValid && rawContentMatches
+	passed := hashMatches && messageMatches && rawValid
 
 	report := &NormalizedVerificationReport{
 		EventID:         evtID,
@@ -897,9 +941,6 @@ func (s *RawStore) VerifyNormalized(ctx context.Context, eventID string) (*Norma
 		}
 		if !messageMatches {
 			reasons = append(reasons, fmt.Sprintf("message column (%q) does not match event_json payload (%q)", colMsg, expectedMsg))
-		}
-		if !rawContentMatches {
-			reasons = append(reasons, fmt.Sprintf("message (%q) does not exist in original raw wire log (tampered projection)", colMsg))
 		}
 		if !rawValid {
 			reasons = append(reasons, "parent raw event wire bytes were modified or corrupted")

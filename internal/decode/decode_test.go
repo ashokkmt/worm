@@ -549,6 +549,40 @@ func TestXMLDecoder_MalformedAndSecurity(t *testing.T) {
 	}
 }
 
+func TestXMLDecoderRejectsSecondRoot(t *testing.T) {
+	if _, err := NewXMLDecoder().Decode([]byte(`<a/><b/>`)); err == nil {
+		t.Fatal("expected second top-level XML element to be rejected")
+	}
+}
+
+func TestSyslogRFC5424BracketsRemainInMessage(t *testing.T) {
+	input := []byte(`<14>1 2026-09-20T10:00:00Z host app 123 ID47 [meta x="y"] action=allow tags=[web]`)
+	records, err := NewSyslogDecoder().Decode(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := records[0].Fields["message"]; got != "action=allow tags=[web]" {
+		t.Fatalf("message = %v", got)
+	}
+	if got := records[0].Headers["syslog_structured_data"]; got != `[meta x="y"]` {
+		t.Fatalf("structured data = %v", got)
+	}
+}
+
+func TestLEEFWindowsPathUnescapedOnce(t *testing.T) {
+	input := []byte(`LEEF:2.0|Vendor|Product|1.0|Evt|^|path=C:\\temp\\new^literal=\\t\\n`)
+	records, err := NewLEEFDecoder().Decode(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := records[0].Fields["path"]; got != `C:\temp\new` {
+		t.Fatalf("path = %q", got)
+	}
+	if got := records[0].Fields["literal"]; got != `\t\n` {
+		t.Fatalf("literal escapes = %q", got)
+	}
+}
+
 func TestLEEFDecoder_LEEF1(t *testing.T) {
 	fixture := loadFixture(t, "testdata/formats/leef/valid_leef1.txt")
 	decoder := NewLEEFDecoder()
