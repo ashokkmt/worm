@@ -240,40 +240,47 @@ func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, ou
 
 		if peekBytes[0] >= '1' && peekBytes[0] <= '9' {
 			// RFC 6587 octet counting: <MSG-LEN> <MSG>
-			lenStr, err := reader.ReadString(' ')
+			lenStr, err := readBoundedFrame(reader, ' ', 16)
 			if err != nil {
 				return
 			}
-			msgLen, err := strconv.Atoi(strings.TrimSpace(lenStr))
-			if err == nil && msgLen > 0 && msgLen <= 10*1024*1024 {
-				payload := make([]byte, msgLen)
-				_, err := io.ReadFull(reader, payload)
-				if err != nil {
-					return
-				}
-				rec := model.IngestedRecord{
-					Transport:  "syslog-tcp",
-					SourceIP:   remoteHost,
-					SourcePort: remotePort,
-					RawBytes:   payload,
-					ReceivedAt: time.Now().UTC(),
-					Metadata:   model.ReceiveMetadata{Listener: conn.LocalAddr().String()},
-				}
-				select {
-				case out <- rec:
-				case <-ctx.Done():
-					return
-				}
-				continue
+			msgLen, err := strconv.Atoi(strings.TrimSpace(string(lenStr)))
+			if err != nil || msgLen <= 0 || msgLen > maxSyslogFrameBytes {
+				return
 			}
+			payload := make([]byte, msgLen)
+			_, err = io.ReadFull(reader, payload)
+			if err != nil {
+				return
+			}
+			rec := model.IngestedRecord{
+				Transport:  "syslog-tcp",
+				SourceIP:   remoteHost,
+				SourcePort: remotePort,
+				RawBytes:   payload,
+				ReceivedAt: time.Now().UTC(),
+				Metadata:   model.ReceiveMetadata{Listener: conn.LocalAddr().String()},
+			}
+			select {
+			case out <- rec:
+			case <-ctx.Done():
+				return
+			}
+			continue
 		}
 
 		// Non-transparent framing: newline delimited
-		lineBytes, err := reader.ReadBytes('\n')
+		lineBytes, err := readBoundedFrame(reader, '\n', maxSyslogFrameBytes+2)
+		if errors.Is(err, errFrameTooLarge) {
+			return
+		}
 		if err != nil && len(lineBytes) == 0 {
 			return
 		}
 		payload := bytes.TrimRight(lineBytes, "\r\n")
+		if len(payload) > maxSyslogFrameBytes {
+			return
+		}
 		if len(payload) == 0 {
 			if err != nil {
 				return
@@ -298,6 +305,24 @@ func (l *SyslogTCPListener) handleTCPConn(ctx context.Context, conn net.Conn, ou
 
 		if err != nil {
 			return
+		}
+	}
+}
+
+const maxSyslogFrameBytes = 10 * 1024 * 1024
+
+var errFrameTooLarge = errors.New("syslog frame exceeds 10 MiB limit")
+
+func readBoundedFrame(reader *bufio.Reader, delimiter byte, max int) ([]byte, error) {
+	var frame []byte
+	for {
+		part, err := reader.ReadSlice(delimiter)
+		if len(frame)+len(part) > max {
+			return nil, errFrameTooLarge
+		}
+		frame = append(frame, part...)
+		if err != bufio.ErrBufferFull {
+			return frame, err
 		}
 	}
 }

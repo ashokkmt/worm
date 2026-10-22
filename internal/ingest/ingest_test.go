@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -517,11 +518,28 @@ func TestSyslogTLSListener(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for TLS syslog message")
 	}
+	counted := []byte("abc\n")
+	if _, err := conn.Write(append([]byte("4 "), counted...)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case rec := <-out:
+		if !bytes.Equal(rec.RawBytes, counted) {
+			t.Fatalf("octet-counted TLS bytes = %q, want %q", rec.RawBytes, counted)
+		}
+		if rec.Ack != nil {
+			rec.Ack <- nil
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for octet-counted TLS message")
+	}
 	_ = listener.Stop()
 }
 
 func TestCloudPoller(t *testing.T) {
+	queries := make(chan url.Values, 10)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		queries <- r.URL.Query()
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"next_watermark": "wm-20260924-002",
@@ -534,9 +552,13 @@ func TestCloudPoller(t *testing.T) {
 
 	tempDir := t.TempDir()
 	wmPath := filepath.Join(tempDir, "watermark.txt")
+	const oldWatermark = "a+b&extra=yes/#snowman-☃"
+	if err := os.WriteFile(wmPath, []byte(oldWatermark), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	cfg := ingest.PollerConfig{
-		EndpointURL:   server.URL,
+		EndpointURL:   server.URL + "/events?tenant=acme",
 		Interval:      50 * time.Millisecond,
 		WatermarkPath: wmPath,
 	}
@@ -549,6 +571,14 @@ func TestCloudPoller(t *testing.T) {
 	go func() {
 		_ = poller.Start(ctx, out)
 	}()
+	select {
+	case query := <-queries:
+		if query.Get("tenant") != "acme" || query.Get("limit") != "100" || query.Get("since") != oldWatermark || query.Get("extra") != "" {
+			t.Fatalf("poll query corrupted existing parameters or watermark: %v", query)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cloud poll request")
+	}
 
 	select {
 	case rec := <-out:

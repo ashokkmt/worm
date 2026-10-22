@@ -2,7 +2,7 @@
 
 WORM's parser marketplace is a public catalog of YAML parser packs maintained by the WORM owner. It gives users one place to search across many vendors, products, log formats, and documented models, then install only the packs they need. This lets the catalog grow independently of WORM binary releases when a pack uses an existing decoder. A format that needs a new decoder still needs a WORM code change and release.
 
-The catalog currently starts with the existing parser packs. New vendors and models can be added as they are tested and released. The marketplace does not install anything by itself: each WORM operator decides which packs to activate.
+The catalog currently contains **124 unique parser packs across 116 researched source profiles**, with **131 published pack releases**. A source profile may reuse an existing parser identity when several vendor/model scopes share a format and matching rules. The marketplace does not install anything by itself: each WORM operator decides which packs to activate.
 
 ## Marketplace address and files
 
@@ -13,6 +13,8 @@ https://ashokkmt.github.io/worm/packs/network-device-asa/1.0.3/pack.yaml
 ```
 
 Browse the human-readable pack index at [https://ashokkmt.github.io/worm/packs/](https://ashokkmt.github.io/worm/packs/). Select a pack to see its published versions and links to each raw YAML artifact. The versioned artifact URL is intended to display YAML directly; GitHub Pages does not generate folder listings automatically.
+
+The repository keeps the same searchable coverage and release list in [marketplace/INDEX.md](marketplace/INDEX.md). It lists each pack's description, published versions and changelogs, vendor/product, category, format, models, and tags. The publisher regenerates this file from the signed catalog with `go run ./cmd/marketplace -write-index`, and every signed publish refreshes it as well.
 
 GitHub Pages serves static files, so the registry needs no running WORM server. The root `packs/` directory in the source repository holds the owner's current pack YAML; it is not copied into binary archives or the Docker image. Those customer packages start with an empty `packs/` directory, where marketplace-installed and user-created YAML files are stored. `marketplace/metadata.json` holds searchable coverage and release notes. `marketplace/releases/` preserves old published YAML versions. The publisher generates `marketplace-site/`; GitHub Actions publishes that generated folder. The marketplace's generated site is not a customer's active pack folder.
 

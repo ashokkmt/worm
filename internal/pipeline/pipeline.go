@@ -81,7 +81,10 @@ type Pipeline struct {
 	wg           sync.WaitGroup
 	ctx          context.Context
 	cancel       context.CancelFunc
-	closed       atomic.Bool
+	submitMu     sync.Mutex
+	submitClosed bool
+	submitDone   chan struct{}
+	submitWG     sync.WaitGroup
 	outbox       *outbox.Outbox
 	durableSink  durableOutput
 	deliveryWG   sync.WaitGroup
@@ -118,6 +121,7 @@ func New(cfg Config, store *rawstore.RawStore, sink OutputSink) *Pipeline {
 		validator:    normalize.NewValidator(),
 		inbound:      make(chan model.IngestedRecord, cfg.BufferSize),
 		deliveryWake: make(chan struct{}, 1),
+		submitDone:   make(chan struct{}),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -171,9 +175,10 @@ func (p *Pipeline) Start() {
 
 // Submit enqueues an ingested raw datagram into the bounded pipeline.
 func (p *Pipeline) Submit(record model.IngestedRecord) error {
-	if p.closed.Load() {
+	if !p.beginSubmit() {
 		return fmt.Errorf("pipeline is closed")
 	}
+	defer p.submitWG.Done()
 
 	select {
 	case p.inbound <- record:
@@ -189,9 +194,10 @@ func (p *Pipeline) Submit(record model.IngestedRecord) error {
 
 // SubmitWait enqueues an ingested record, waiting with backpressure until space is available or context expires.
 func (p *Pipeline) SubmitWait(ctx context.Context, record model.IngestedRecord) error {
-	if p.closed.Load() {
+	if !p.beginSubmit() {
 		return fmt.Errorf("pipeline is closed")
 	}
+	defer p.submitWG.Done()
 
 	select {
 	case p.inbound <- record:
@@ -202,7 +208,19 @@ func (p *Pipeline) SubmitWait(ctx context.Context, record model.IngestedRecord) 
 		return ctx.Err()
 	case <-p.ctx.Done():
 		return p.ctx.Err()
+	case <-p.submitDone:
+		return fmt.Errorf("pipeline is closed")
 	}
+}
+
+func (p *Pipeline) beginSubmit() bool {
+	p.submitMu.Lock()
+	defer p.submitMu.Unlock()
+	if p.submitClosed {
+		return false
+	}
+	p.submitWG.Add(1)
+	return true
 }
 
 // ConnectIngest drains records from an ingestion stream channel directly into the pipeline with backpressure.
@@ -232,9 +250,10 @@ func (p *Pipeline) ConnectIngest(ctx context.Context, in <-chan model.IngestedRe
 
 // SubmitSync processes an ingested record synchronously within the calling goroutine.
 func (p *Pipeline) SubmitSync(ctx context.Context, record model.IngestedRecord) error {
-	if p.closed.Load() {
+	if !p.beginSubmit() {
 		return fmt.Errorf("pipeline is closed")
 	}
+	defer p.submitWG.Done()
 
 	p.accepted.Add(1)
 	p.pending.Add(1)
@@ -244,9 +263,15 @@ func (p *Pipeline) SubmitSync(ctx context.Context, record model.IngestedRecord) 
 
 // Stop gracefully drains the ingestion buffer and waits for all workers to finish.
 func (p *Pipeline) Stop() {
-	if !p.closed.CompareAndSwap(false, true) {
+	p.submitMu.Lock()
+	if p.submitClosed {
+		p.submitMu.Unlock()
 		return
 	}
+	p.submitClosed = true
+	close(p.submitDone)
+	p.submitMu.Unlock()
+	p.submitWG.Wait()
 	close(p.inbound)
 	p.wg.Wait()
 	p.cancel()
@@ -340,6 +365,8 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			QuarantinedAt:  time.Now().UTC(),
 		}) {
 			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		} else {
+			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusQuarantined)
 		}
 		return
 	}
@@ -380,6 +407,8 @@ func (p *Pipeline) processRecord(ctx context.Context, rec model.IngestedRecord) 
 			QuarantinedAt:  time.Now().UTC(),
 		}) {
 			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusAccepted)
+		} else {
+			_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusQuarantined)
 		}
 		return
 	}
@@ -631,7 +660,7 @@ func (p *Pipeline) persistQuarantine(ctx context.Context, entry model.Quarantine
 		log.Printf("quarantine persistence failed for raw %s child %d: raw store is unavailable", entry.RawID, entry.RecordOrdinal)
 		return false
 	}
-	if err := p.store.Quarantine(ctx, entry); err != nil {
+	if err := p.store.QuarantineChild(ctx, entry); err != nil {
 		log.Printf("quarantine persistence failed for raw %s child %d: %v", entry.RawID, entry.RecordOrdinal, err)
 		return false
 	}
@@ -735,15 +764,11 @@ func (p *Pipeline) Replay(ctx context.Context, qID string) (*model.NormalizedEve
 	if p.durableSink != nil {
 		destinations = p.durableSink.DestinationNames()
 	}
-	// Persist projection and delivery intent before resolving quarantine.
+	// Resolve quarantine and store delivery intent in one database transaction.
 	if p.store != nil {
-		if err := p.store.StoreNormalizedWithOutbox(ctx, norm, destinations); err != nil {
-			return nil, fmt.Errorf("failed to store normalized replayed event: %w", err)
+		if err := p.store.ResolveQuarantineWithOutbox(ctx, qID, norm, destinations); err != nil {
+			return nil, fmt.Errorf("failed to commit replay result: %w", err)
 		}
-		if err := p.store.DeleteQuarantine(ctx, qID); err != nil {
-			return nil, fmt.Errorf("failed to delete resolved quarantine entry: %w", err)
-		}
-		_ = p.store.UpdateStatus(ctx, rawEvt.RawID, model.StatusNormalized)
 	}
 
 	// Update pipeline loss accounting counters

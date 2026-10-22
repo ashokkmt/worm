@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 	"worm/internal/model"
@@ -136,12 +138,18 @@ func (p *CloudPoller) pollOnce(ctx context.Context, out chan<- model.IngestedRec
 	currentWM := p.watermark
 	p.mu.Unlock()
 
-	reqURL := fmt.Sprintf("%s?limit=%d", p.cfg.EndpointURL, p.cfg.BatchSize)
-	if currentWM != "" {
-		reqURL += fmt.Sprintf("&since=%s", currentWM)
+	endpoint, err := url.Parse(p.cfg.EndpointURL)
+	if err != nil {
+		return fmt.Errorf("parse poll endpoint: %w", err)
 	}
+	query := endpoint.Query()
+	query.Set("limit", strconv.Itoa(p.cfg.BatchSize))
+	if currentWM != "" {
+		query.Set("since", currentWM)
+	}
+	endpoint.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to construct poll request: %w", err)
 	}

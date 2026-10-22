@@ -281,6 +281,22 @@ func TestKafkaSink_Deliver(t *testing.T) {
 	}
 }
 
+func TestKafkaSinkUsesConfiguredKeyField(t *testing.T) {
+	producer := output.NewMemoryKafkaProducer()
+	event := sampleEvent("key-field-event")
+	event.Worm.SourceID = "host-1"
+	sink := output.NewKafkaSink(output.KafkaOutputConfig{Topic: "events", KeyField: "worm.source_id"}, producer)
+	if err := sink.Emit(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(producer.Messages()[0].Key); got != "host-1" {
+		t.Fatalf("Kafka key = %q, want configured source ID", got)
+	}
+	if err := output.NewKafkaSink(output.KafkaOutputConfig{Topic: "events", KeyField: "worm.unknown"}, output.NewMemoryKafkaProducer()).Emit(context.Background(), event); err == nil {
+		t.Fatal("expected unsupported Kafka key field to fail")
+	}
+}
+
 func TestParquetSink_PartitionAndManifest(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "worm_parquet_lake_*")
 	if err != nil {

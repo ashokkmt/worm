@@ -45,12 +45,20 @@ func main() {
 	site := flag.String("site", "marketplace-site", "static site output directory")
 	keyFile := flag.String("key-file", "", "base64 Ed25519 private key file (or WORM_MARKETPLACE_SIGNING_KEY)")
 	checkPacks := flag.Bool("check-packs", false, "verify owner pack files match the embedded signed catalog")
+	writeIndex := flag.Bool("write-index", false, "write marketplace/INDEX.md from the embedded signed catalog")
 	prepareRelease := flag.Bool("prepare-release", false, "archive and version selected packs before editing them")
 	changelog := flag.String("changelog", "", "changelog for packs prepared with -prepare-release")
 	registryURL := flag.String("registry-url", "https://ashokkmt.github.io/worm", "registry used to retrieve missing prior release artifacts")
 	flag.Parse()
 	if *checkPacks {
 		checkSeedPacks(*packDir)
+		return
+	}
+	if *writeIndex {
+		catalog, err := marketplace.LoadCatalog()
+		fatal(err)
+		fatal(writeRepositoryIndex("marketplace/INDEX.md", catalog))
+		fmt.Printf("Wrote marketplace/INDEX.md with %d packs\n", len(catalog.Packs))
 		return
 	}
 	if *prepareRelease {
@@ -244,6 +252,7 @@ func main() {
 		}
 	}
 	fatal(writePackIndexes(*site, &cat))
+	fatal(writeRepositoryIndex("marketplace/INDEX.md", &cat))
 	fmt.Printf("Built signed catalog with %d packs in %s\n", len(cat.Packs), *site)
 }
 

@@ -129,6 +129,8 @@ worm replay QUARANTINE_ID           # replace with an ID from `worm replay`; or:
 
 Use `worm marketplace search` and `show` to browse the catalog cached under the selected packs directory. Use `refresh` to update it, `fetch` to download without activation, `worm packs install` to validate and activate a release, and `remove` to deactivate a marketplace-managed pack from that WORM installation. These commands do not change the repository's owner source files. See [MARKETPLACE.md](MARKETPLACE.md) for the customer and owner workflows.
 
+The public catalog contains 124 unique parser packs across 116 researched source profiles and 131 published releases. Browse all packs and versions at the [online marketplace](https://ashokkmt.github.io/worm/packs/) or in the repository's [Marketplace Pack Index](marketplace/INDEX.md).
+
 These are example placeholders: the pack must actually match a quarantined event. Pack activation currently also requests quarantine reconciliation; check its report before replaying an ID manually. Replay and live pack activation need the running management API. The `-verify` commands compare stored bytes/events to hashes in the same database; they are consistency checks, not independently anchored tamper-proof evidence.
 
 ## Docker and simulation

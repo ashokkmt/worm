@@ -29,8 +29,8 @@ spec:
       from: rule_name
       type: string
   map:
-    src_ip: src_endpoint.ip
-    dest_ip: dst_endpoint.ip
+    src_ip: event.src_endpoint.ip
+    dest_ip: event.dst_endpoint.ip
   preserveUnmapped: true
 `,
     sample: `receive_time,serial_number,type,subtype,generate_time,src_ip,dest_ip,nat_src_ip,nat_dest_ip,rule_name,action
@@ -61,8 +61,8 @@ spec:
       from: latency
       type: float
   map:
-    customer_id: user.uid
-    status_code: http_response.code
+    customer_id: event.actor.user.uid
+    status_code: event.http_response.status_code
   preserveUnmapped: true
 `,
     sample: `{"app_name":"checkout-service","user_id":"usr_9981","status":200,"latency":42.5,"message":"order placed successfully"}`,

@@ -248,11 +248,12 @@ func (a *KafkaAdapter) processBatch(ctx context.Context, out chan<- model.Ingest
 			select {
 			case commitErr := <-ackChan:
 				if commitErr != nil {
-					// Raw store durability failed: do not commit offset
-					continue
+					return fmt.Errorf("raw commit failed for Kafka offset %s/%d/%d: %w", msg.Topic, msg.Partition, msg.Offset, commitErr)
 				}
 				// Durably stored: commit Kafka offset
-				_ = a.client.CommitOffset(ctx, msg.Topic, msg.Partition, msg.Offset)
+				if err := a.client.CommitOffset(ctx, msg.Topic, msg.Partition, msg.Offset); err != nil {
+					return fmt.Errorf("commit Kafka offset %s/%d/%d: %w", msg.Topic, msg.Partition, msg.Offset, err)
+				}
 			case <-ctx.Done():
 				return ctx.Err()
 			}

@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 	"worm/internal/model"
@@ -179,7 +180,10 @@ func (s *KafkaSink) Emit(ctx context.Context, event *model.NormalizedEvent) erro
 		return fmt.Errorf("failed to marshal normalized event: %w", err)
 	}
 
-	key := []byte(event.Worm.RawID)
+	key, err := kafkaRecordKey(event, s.cfg.KeyField)
+	if err != nil {
+		return err
+	}
 
 	msg := &KafkaMessage{
 		Topic:     s.cfg.Topic,
@@ -189,6 +193,43 @@ func (s *KafkaSink) Emit(ctx context.Context, event *model.NormalizedEvent) erro
 	}
 
 	return s.client.Produce(ctx, msg)
+}
+
+func kafkaRecordKey(event *model.NormalizedEvent, field string) ([]byte, error) {
+	if field == "" {
+		field = "worm.raw_id"
+	}
+	switch field {
+	case "worm.raw_id":
+		return []byte(event.Worm.RawID), nil
+	case "worm.event_id":
+		return []byte(event.Worm.EventID), nil
+	case "worm.source_id":
+		return []byte(event.Worm.SourceID), nil
+	case "worm.raw_sha256":
+		return []byte(event.Worm.RawSHA256), nil
+	}
+	path := strings.TrimPrefix(strings.TrimPrefix(field, "event."), "ocsf.")
+	value, ok := lookupKafkaField(event.OCSF, strings.Split(path, "."))
+	if !ok || value == nil {
+		return nil, fmt.Errorf("unsupported or missing Kafka key field %q", field)
+	}
+	return []byte(fmt.Sprint(value)), nil
+}
+
+func lookupKafkaField(fields map[string]any, path []string) (any, bool) {
+	if len(path) == 0 {
+		return nil, false
+	}
+	value, ok := fields[path[0]]
+	if !ok || len(path) == 1 {
+		return value, ok
+	}
+	nested, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return lookupKafkaField(nested, path[1:])
 }
 
 func (s *KafkaSink) Flush() error { return s.client.Flush(context.Background()) }

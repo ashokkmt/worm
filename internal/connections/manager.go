@@ -165,6 +165,16 @@ func (m *Manager) GetRawYAML(name string) ([]byte, error) {
 	return yaml.Marshal(conn)
 }
 
+func (m *Manager) Filename(name string) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	p, ok := m.filePaths[name]
+	if !ok || p == "" {
+		return "", fmt.Errorf("connection %q not found", name)
+	}
+	return filepath.Base(p), nil
+}
+
 // Get finds an active connection by name.
 func (m *Manager) Get(name string) (*Connection, error) {
 	m.mu.RLock()

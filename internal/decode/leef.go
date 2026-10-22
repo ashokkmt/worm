@@ -267,9 +267,7 @@ func splitWithEscapes(s, delimiter string) []string {
 	for i := 0; i < len(s); i++ {
 		ch := s[i]
 		if escaped {
-			if ch != delimByte && ch != '\\' {
-				cur.WriteByte('\\')
-			}
+			cur.WriteByte('\\')
 			cur.WriteByte(ch)
 			escaped = false
 			continue

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"worm/internal/model"
+	"worm/internal/outbox"
 )
 
 func setupTestStore(t *testing.T) *RawStore {
@@ -580,5 +582,72 @@ func TestReplayUpdatesNormalizedProjectionColumns(t *testing.T) {
 	}
 	if category != "new-category" || sourceID != "new-source" || severity != "5" || activity != "new-activity" || message != "new-message" || eventTime != 2000 || received != event.Worm.ReceivedTime.Format(time.RFC3339Nano) {
 		t.Fatalf("replay projection columns are stale: category=%q source=%q severity=%q activity=%q message=%q time=%d received=%q", category, sourceID, severity, activity, message, eventTime, received)
+	}
+}
+
+func TestVerifyNormalizedAcceptsDecodedEscapedMessage(t *testing.T) {
+	store := setupTestStore(t)
+	ctx := context.Background()
+	raw, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte(`{"message":"hello\nworld"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := &model.NormalizedEvent{
+		Worm: model.WormEnvelope{EventID: "escaped-message", RawID: raw.RawID, RawSHA256: raw.RawSHA256, ReceivedTime: time.Now().UTC()},
+		OCSF: map[string]any{"message": "hello\nworld"},
+	}
+	if err := store.StoreNormalized(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	report, err := store.VerifyNormalized(ctx, event.Worm.EventID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Passed {
+		t.Fatalf("untampered escaped message failed verification: %+v", report)
+	}
+}
+
+func TestResolveQuarantineWithOutboxIsAtomicAndPreservesSiblingStatus(t *testing.T) {
+	store := setupTestStore(t)
+	if _, err := outbox.NewOutbox(store.DB()); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	raw, err := store.Store(ctx, model.IngestedRecord{Transport: "test", RawBytes: []byte(`[1,2]`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ordinal := 0; ordinal < 2; ordinal++ {
+		if err := store.Quarantine(ctx, model.QuarantineEntry{QuarantineID: fmt.Sprintf("q-%d", ordinal), RawID: raw.RawID, RecordOrdinal: ordinal, RawSHA256: raw.RawSHA256, Stage: "test", Reason: "unknown_source", ReplayEligible: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	event := &model.NormalizedEvent{Worm: model.WormEnvelope{EventID: "resolved-child", RawID: raw.RawID, RecordOrdinal: 0, ReceivedTime: time.Now().UTC()}, OCSF: map[string]any{"message": "first"}}
+	if _, err := store.DB().Exec(`CREATE TRIGGER fail_quarantine_delete BEFORE DELETE ON quarantine BEGIN SELECT RAISE(FAIL, 'injected delete failure'); END;`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ResolveQuarantineWithOutbox(ctx, "q-0", event, []string{"sink"}); err == nil {
+		t.Fatal("expected injected quarantine deletion error")
+	}
+	if count, _ := store.CountNormalized(ctx); count != 0 {
+		t.Fatalf("normalized rows after rolled-back replay = %d", count)
+	}
+	if count, _ := store.CountQuarantine(ctx); count != 2 {
+		t.Fatalf("quarantine rows after rolled-back replay = %d", count)
+	}
+	_, _ = store.DB().Exec(`DROP TRIGGER fail_quarantine_delete`)
+	if err := store.ResolveQuarantineWithOutbox(ctx, "q-0", event, []string{"sink"}); err != nil {
+		t.Fatal(err)
+	}
+	if count, _ := store.CountNormalized(ctx); count != 1 {
+		t.Fatalf("normalized rows after successful replay = %d", count)
+	}
+	if count, _ := store.CountQuarantine(ctx); count != 1 {
+		t.Fatalf("remaining sibling quarantine rows = %d", count)
+	}
+	parent, err := store.Retrieve(ctx, raw.RawID)
+	if err != nil || parent.Status != model.StatusPartial {
+		t.Fatalf("parent status = %q, err=%v; want partial", parent.Status, err)
 	}
 }

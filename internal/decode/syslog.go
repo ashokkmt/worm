@@ -126,14 +126,12 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 				headers["syslog_structured_data"] = "-"
 				msgBody = ""
 			} else if strings.HasPrefix(sdAndMsg, "[") {
-				lastClose := strings.LastIndex(sdAndMsg, "]")
-				if lastClose != -1 && lastClose < len(sdAndMsg)-1 {
-					headers["syslog_structured_data"] = sdAndMsg[:lastClose+1]
-					msgBody = strings.TrimSpace(sdAndMsg[lastClose+1:])
-				} else {
-					headers["syslog_structured_data"] = sdAndMsg
-					msgBody = ""
+				sd, message, err := splitRFC5424StructuredData(sdAndMsg)
+				if err != nil {
+					return nil, err
 				}
+				headers["syslog_structured_data"] = sd
+				msgBody = message
 			} else {
 				msgBody = sdAndMsg
 			}
@@ -222,6 +220,44 @@ func (s *SyslogDecoder) Decode(raw []byte) ([]*model.DecodedRecord, error) {
 	}
 
 	return []*model.DecodedRecord{record}, nil
+}
+
+func splitRFC5424StructuredData(s string) (string, string, error) {
+	pos := 0
+	for pos < len(s) && s[pos] == '[' {
+		pos++
+		quoted, escaped, closed := false, false, false
+		for pos < len(s) {
+			ch := s[pos]
+			pos++
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == '"' {
+				quoted = !quoted
+				continue
+			}
+			if ch == ']' && !quoted {
+				closed = true
+				break
+			}
+		}
+		if !closed || quoted || escaped {
+			return "", "", fmt.Errorf("malformed RFC 5424 structured data")
+		}
+		if pos == len(s) || s[pos] != '[' {
+			return s[:pos], strings.TrimSpace(s[pos:]), nil
+		}
+	}
+	if pos == 0 {
+		return "-", s, nil
+	}
+	return s[:pos], strings.TrimSpace(s[pos:]), nil
 }
 
 func wrapInnerRecords(innerRecs []*model.DecodedRecord, syslogHeaders map[string]any, raw []byte, outerVariant string) []*model.DecodedRecord {
