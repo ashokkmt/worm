@@ -10,3 +10,4 @@ marketplace-site/
 vendor/
 packs/.marketplace/
 .secrets/
+WORKLOG.md
